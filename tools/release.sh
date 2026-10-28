@@ -32,7 +32,7 @@ if git diff --quiet "$last" HEAD -- $PKG; then
   exit 0
 fi
 
-ver() { sed -n "s/^const VERSION = '\(.*\)';/\1/p"; }
+ver() { sed -n "s/^var VERSION = '\(.*\)';/\1/p; s/^const VERSION = '\(.*\)';/\1/p"; }
 fever() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))'; }
 patch() { echo "$1" | awk -F. '{ printf "%d.%d.%d\n", $1, $2, $3 + 1 }'; }
 svc=$(ver < helper/helper.js)
@@ -62,7 +62,7 @@ if [ -n "$DRY" ]; then
   exit 0
 fi
 
-[ "$svc_new" = "$svc" ] || sed -i.bak "s/^const VERSION = '$svc';/const VERSION = '$svc_new';/" helper/helper.js
+[ "$svc_new" = "$svc" ] || sed -i.bak "s/^\(var\|const\) VERSION = '$svc';/\1 VERSION = '$svc_new';/" helper/helper.js
 if [ "$fe_new" != "$fe" ]; then
   sed -i.bak "s/\"version\":\"$fe\"/\"version\":\"$fe_new\"/" app/version.json
   sed -i.bak "s/VERSION = '$fe';/VERSION = '$fe_new';/" app/src/js/core.js

@@ -13,6 +13,7 @@ run(async () => {
   fs.writeFileSync(path.join(service, 'backup/home-appinfo.orig.json'), JSON.stringify({ id: 'com.webos.app.home', type: 'flutter' }));
   fs.copyFileSync(path.join(root, 'helper/tvprofile.js'), path.join(service, 'tvprofile.js'));
   fs.copyFileSync(path.join(root, 'scripts/jtool.js'), path.join(service, 'jtool.js'));
+  fs.copyFileSync(path.join(root, 'scripts/svc.sh'), path.join(service, 'svc.sh'));
   fs.symlinkSync(process.execPath, path.join(bin, 'node'));
   fs.writeFileSync(path.join(bin, 'luna-send'), '#!/bin/sh\nprintf \'%s\\n\' "$FACTS"\n', { mode: 0o755 });
   fs.writeFileSync(
@@ -39,4 +40,33 @@ run(async () => {
     });
     ok(r.status === 0 && fs.readFileSync(calls, 'utf8') === (state === 'active' ? 'arccontroller\n' : ''), 'post-SAM hook: ARC ' + state);
   }
+
+  // webOS 4.x (Upstart, no systemctl): maps webapp-mgr -> WebAppMgr and preload-manager -> webos-preload-manager, restarts only running jobs
+  const upRoot = path.join(tmp, 'uproot'),
+    etcInit = path.join(upRoot, 'etc', 'init');
+  fs.mkdirSync(upRoot);
+  fs.mkdirSync(path.join(upRoot, 'etc'));
+  fs.mkdirSync(etcInit);
+  for (const j of ['eim', 'WebAppMgr', 'webos-preload-manager']) fs.writeFileSync(path.join(etcInit, j + '.conf'), '');
+  fs.writeFileSync(path.join(service, 'backup/home-appinfo.orig.json'), JSON.stringify({ id: 'com.webos.app.fullhome', type: 'native' }));
+  fs.writeFileSync(
+    path.join(bin, 'initctl'),
+    '#!/bin/sh\ncase "$1:$2" in\nstatus:eim) echo "eim start/running, process 101" ;;\nstatus:WebAppMgr) echo "WebAppMgr start/running, process 102" ;;\nstatus:webos-preload-manager) echo "webos-preload-manager stop/waiting" ;;\nrestart:*) printf "%s\\n" "$2" >> "$CALLS" ;;\n*) exit 1 ;;\nesac\n',
+    { mode: 0o755 }
+  );
+  fs.writeFileSync(calls, '');
+  const ru = cp.spawnSync('sh', ['-s'], {
+    input: script,
+    encoding: 'utf8',
+    env: Object.assign({}, process.env, {
+      CYTV_INIT: 'upstart',
+      CYTV_TEST_ROOT: upRoot,
+      FACTS: JSON.stringify({ returnValue: true, sdkVersion: '4.10.0', modelName: 'OLED65B9SLA' }),
+      CALLS: calls,
+    }),
+  });
+  ok(
+    ru.status === 0 && fs.readFileSync(calls, 'utf8') === 'eim\nWebAppMgr\n',
+    'post-SAM hook on Upstart (webOS 4.x): restarts running eim and WebAppMgr, skips stopped webos-preload-manager and missing memorymanager'
+  );
 });

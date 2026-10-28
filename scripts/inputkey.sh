@@ -7,7 +7,8 @@ export PATH=/usr/bin:/usr/sbin:/bin:/sbin:$PATH
 read UP _ < /proc/uptime   # when the key was pressed, for tools/perf-tv.sh (logged after the work is done)
 mark() { (curl -s -m 2 "http://127.0.0.1:8765/api/log?m=perf%20key%20$1%20$UP" </dev/null >/dev/null 2>&1 &); }
 M=$(cat /media/developer/cleanyourtv/picker-mode 2>/dev/null)
-HOME_INPUTS='{"id":"com.webos.app.home","params":{"inputs":true}}'
+HID=$(cat /tmp/cleanyourtv-home-id 2>/dev/null); [ -n "$HID" ] || HID=com.webos.app.home
+HOME_INPUTS="{\"id\":\"$HID\",\"params\":{\"inputs\":true}}"
 # where home-standin.sh stands in for LG's native Home, it takes the parameters from this file (issue 26)
 standin() { [ -f /tmp/cleanyourtv-home-standin ] && echo "$UP {\"inputs\":true}" > /tmp/cleanyourtv-home-params; }
 if [ "$M" = launcher ]; then

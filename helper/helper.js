@@ -3,32 +3,42 @@
 // This file only wires the parts together. Each part is a feature module with create(ctx) -> { name, paths/prefix, handle, start };
 // ctx carries what they share (config, the TV profile, luna). A part that fails to load is left out and reported at /api/service;
 // the rest keeps working. AGENTS.md has the map of the files.
-const VERSION = '1.6.10';
-const fs = require('fs');
-const P = require('./paths'),
+var VERSION = '1.6.10';
+var fs = require('fs');
+var P = require('./paths'),
   diag = require('./diag');
 diag.start();
 // A promise that fails without a handler ends the process on Node 15 and newer (webOS 22 and later ship Node 16): log it and keep the
 // service running; the launcher depends on it.
-process.on('unhandledRejection', (/** @type {any} */ e) => console.error('unhandled: ' + ((e && e.stack) || e)));
-const luna = require('./luna'),
+process.on('unhandledRejection', function (/** @type {any} */ e) {
+  console.error('unhandled: ' + ((e && e.stack) || e));
+});
+var luna = require('./luna'),
   web = require('./web'),
   config = require('./config').main(),
   tvprofile = require('./tvprofile');
 
-const PORT = 8765;
-const loaded = [],
+var PORT = 8765;
+/** @type {any[]} */
+var loaded = [],
+  /** @type {Record<string, string>} */
   failed = {};
-const ctx = {
+var ctx = {
   version: VERSION,
-  config,
-  luna,
-  profile: tvprofile.create({ luna }),
-  feature: name => loaded.filter(f => f.name === name)[0] || null,
+  config: config,
+  luna: luna,
+  profile: tvprofile.create({ luna: luna }),
+  feature: function (name) {
+    return (
+      loaded.filter(function (f) {
+        return f.name === name;
+      })[0] || null
+    );
+  },
 };
 function load(name, make) {
   try {
-    const f = make();
+    var f = make();
     if (f) loaded.push(f);
     return f;
   } catch (e) {
@@ -39,53 +49,93 @@ function load(name, make) {
 }
 
 // the service itself: its version, the TV profile and which parts are running
-const core = {
+var core = {
   name: 'core',
   paths: ['/api/version', '/api/tv', '/api/service'],
-  handle(req, res, u) {
+  handle: function (req, res, u) {
     if (u === '/api/version') return web.json(res, { version: VERSION });
     if (u === '/api/tv') return web.json(res, ctx.profile.get());
-    web.json(res, { version: VERSION, node: process.version, features: loaded.map(f => f.name), failed });
+    web.json(res, {
+      version: VERSION,
+      node: process.version,
+      features: loaded.map(function (f) {
+        return f.name;
+      }),
+      failed: failed,
+    });
   },
 };
 loaded.push(core);
 
 // the order matters where one part uses another: voice and the notification port show cards through notify
-const notify = load('notify', () => require('./notify').create(ctx));
-if (notify) load('voice', () => require('./voice').create(ctx));
-load('live', () => require('./live').create(ctx));
-load('theme', () => require('./theme').create(ctx));
-load('wallpapers', () => require('./wallpapers').create(ctx));
-load('cards', () => require('./cards').create(ctx));
-const inputkey = load('inputkey', () => require('./inputkey').create(ctx));
-if (notify) load('notifyapi', () => require('./notifyapi').create(ctx));
-const manager = load('manager', () => require('./manager').create(ctx));
-load('apps', () => require('./apps').create(ctx));
-load('running', () => require('./running').create(ctx));
+var notify = load('notify', function () {
+  return require('./notify').create(ctx);
+});
+if (notify)
+  load('voice', function () {
+    return require('./voice').create(ctx);
+  });
+load('live', function () {
+  return require('./live').create(ctx);
+});
+load('theme', function () {
+  return require('./theme').create(ctx);
+});
+load('wallpapers', function () {
+  return require('./wallpapers').create(ctx);
+});
+load('cards', function () {
+  return require('./cards').create(ctx);
+});
+var inputkey = load('inputkey', function () {
+  return require('./inputkey').create(ctx);
+});
+if (notify)
+  load('notifyapi', function () {
+    return require('./notifyapi').create(ctx);
+  });
+var manager = load('manager', function () {
+  return require('./manager').create(ctx);
+});
+load('apps', function () {
+  return require('./apps').create(ctx);
+});
+load('running', function () {
+  return require('./running').create(ctx);
+});
 
 require('./server')
-  .create({ features: () => loaded })
-  .listen(PORT, '127.0.0.1', () => {
+  .create({
+    features: function () {
+      return loaded;
+    },
+  })
+  .listen(PORT, '127.0.0.1', function () {
     // the files that hold addresses and keys are for root only
     /** @type {Array<[string, number]>} */
-    const secret = [
-      [P.LIVE, 0o700],
-      [P.CONF, 0o600],
-      [P.USAGE, 0o600],
+    var secret = [
+      [P.LIVE, parseInt('700', 8)],
+      [P.CONF, parseInt('600', 8)],
+      [P.USAGE, parseInt('600', 8)],
     ];
-    for (const [f, mode] of secret) {
+    for (var i = 0; i < secret.length; i++) {
       try {
-        fs.chmodSync(f, mode);
+        fs.chmodSync(secret[i][0], secret[i][1]);
       } catch (_) {}
     }
-    for (const f of loaded) {
+    for (var j = 0; j < loaded.length; j++) {
       try {
-        if (f.start) f.start();
+        if (loaded[j].start) loaded[j].start();
       } catch (e) {
-        console.error(f.name + ' failed to start: ' + e.message);
+        console.error(loaded[j].name + ' failed to start: ' + e.message);
       }
     }
     // what this TV is (webOS version, firmware): the Input key's default follows it
-    ctx.profile.refresh().then(() => inputkey && inputkey.syncMode());
-    if (manager) setTimeout(() => manager.check(), 60000);
+    ctx.profile.refresh().then(function () {
+      if (inputkey) inputkey.syncMode();
+    });
+    if (manager)
+      setTimeout(function () {
+        manager.check();
+      }, 60000);
   });

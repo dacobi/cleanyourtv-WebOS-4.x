@@ -13,13 +13,14 @@ for id in com.cleanyourtv.manager com.cleanyourtv.picker com.cleanyourtv.notify;
   luna-send -n 1 -w 3000 luna://com.webos.applicationManager/closeByAppId "{\"id\":\"$id\"}" </dev/null >/dev/null 2>&1
 done
 LASTAPP=/var/luna/preferences/bootd_last_foreground_app_id.json
-grep -q cleanyourtv $LASTAPP 2>/dev/null && echo '{"lastAppId":"com.webos.app.home"}' > $LASTAPP
+HID=$(cat /tmp/cleanyourtv-home-id 2>/dev/null); [ -n "$HID" ] || HID=com.webos.app.home
+grep -q cleanyourtv $LASTAPP 2>/dev/null && echo "{\"lastAppId\":\"$HID\"}" > $LASTAPP
 [ -f $D/debloat-undo.sh ] && sh $D/debloat-undo.sh </dev/null
 pkill -f "[1]0-cleanyourtv-home"   # the watchdog would restart the service
 pkill -f "[c]leanyourtv/helper.js"
 # our Input-key bind
 node $D/jtool.js rmbind 2>/dev/null
-case " $* " in *" --no-reboot "*) if grep -q " /usr/palm/applications/com.webos.app.home " /proc/mounts; then sh $D/undo-home.sh temp </dev/null; fi ;; esac
+case " $* " in *" --no-reboot "*) if grep -q " /usr/palm/applications/com.webos.app.home " /proc/mounts || [ -f /tmp/cleanyourtv-home-standin ]; then sh $D/undo-home.sh temp </dev/null; fi ;; esac
 KEEP=0; case " $* " in *" --keep-config "*) KEEP=1 ;; esac
 if [ $KEEP = 1 ]; then mkdir -p /media/developer/cytv-keep; cp $D/config.json $D/usage.json /media/developer/cytv-keep/ 2>/dev/null; fi
 for id in com.cleanyourtv.picker com.cleanyourtv.notify com.cleanyourtv.live com.cleanyourtv.manager; do

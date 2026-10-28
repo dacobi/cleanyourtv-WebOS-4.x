@@ -3,24 +3,23 @@
 # Use LG's Home instead: the switch in the manager app (creates /media/developer/cleanyourtv/DISABLE and restarts the TV).
 # Two ways, chosen by helper/tvprofile.js (homeTakeover) from LG's Home as it came with the TV:
 #   mount    (flutter and web Home) the launcher's folder is mounted over LG's Home app and the app manager (sam) is restarted
-#   standin  (native Home, webOS 5 to 23) home-standin.sh is mounted over LG's Home program; sam is not restarted.
+#   standin  (native Home, webOS 4 to 23) home-standin.sh is mounted over LG's Home program(s); sam is not restarted.
 #            A file home-method holding "mount" in the service folder chooses the first way on such a TV too.
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin:$PATH
 L=/media/developer/cleanyourtv
 H=/usr/palm/applications/com.webos.app.home
-STANDIN=/tmp/cleanyourtv-home-standin   # holds the path of LG's Home program while the stand-in is mounted over it
+STANDIN=/tmp/cleanyourtv-home-standin   # holds the path(s) of LG's Home program(s) while the stand-in is mounted over them
 LOG=/tmp/cleanyourtv-boot.log
+[ -f "$L/svc.sh" ] && . "$L/svc.sh"
 up() { cut -d' ' -f1 /proc/uptime; }
-replaced() { grep -q " $H " /proc/mounts || { [ -f $STANDIN ] && grep -q " $(cat $STANDIN) " /proc/mounts; }; }
+standin_mounted() {
+  [ -f $STANDIN ] || return 1
+  while read -r p; do [ -n "$p" ] && grep -q " $p " /proc/mounts && return 0; done < $STANDIN
+  return 1
+}
+replaced() { grep -q " $H " /proc/mounts || standin_mounted; }
 pgrep -f cleanyourtv/helper.js >/dev/null || (nohup node $L/helper.js >/tmp/cleanyourtv-helper.log 2>&1 </dev/null &)
 [ -e $L/DISABLE ] && exit 0   # LG's Home is selected: only the service runs (manager, Input key picker)
-sh $L/stage-home.sh
-if replaced; then
-  # already replaced (an update): the served files were refreshed in place; reload Home unless asked not to ($1 = keep)
-  [ "$1" = keep ] && exit 0
-  sh $L/reload-home.sh
-  exit 0
-fi
 
 method=$(node $L/tvprofile.js get homeTakeover --home "$(node $L/jtool.js kind $L/backup/home-appinfo.orig.json 2>/dev/null)" 2>/dev/null)
 [ "$(cat $L/home-method 2>/dev/null)" = mount ] && method=mount
@@ -28,45 +27,76 @@ EXE=""
 [ "$method" = standin ] && EXE=$(node $L/jtool.js exe $L/backup/home-appinfo.orig.json 2>/dev/null)
 [ "$method" = standin ] && [ -z "$EXE" ] && { echo "$(up) home: LG's Home program not found; using the mount and a sam restart" >> $LOG; method=mount; }
 
+sh $L/stage-home.sh "$method"
+if replaced; then
+  # already replaced (an update): the served files were refreshed in place; reload Home unless asked not to ($1 = keep)
+  [ "$1" = keep ] && exit 0
+  sh $L/reload-home.sh
+  exit 0
+fi
+
 if [ "$method" = standin ]; then
-  echo "$(up) home: LG's Home is the program $EXE; mounting the stand-in over it (sam is not restarted)" >> $LOG
   chmod 755 $L/home-standin.sh
-  mount --bind $L/home-standin.sh "$EXE" || { echo "$(up) home: the mount over $EXE failed" >> $LOG; exit 1; }
-  echo "$EXE" > $STANDIN
-  # LG's Home that runs now is its own program: stop it once, sam starts the stand-in for Home from now on
-  for p in $(pgrep -f "^$EXE"); do kill "$p" 2>/dev/null; done
+  FEXE=""
+  case "$(node $L/jtool.js kind $L/backup/fullhome-appinfo.orig.json 2>/dev/null)" in
+    *" native") FEXE=$(node $L/jtool.js exe $L/backup/fullhome-appinfo.orig.json 2>/dev/null) ;;
+  esac
+  : > $STANDIN
+  mounted=0
+  for bin in "$EXE" "$FEXE"; do
+    [ -n "$bin" ] || continue
+    grep -qxF "$bin" $STANDIN 2>/dev/null && continue
+    echo "$(up) home: mounting the stand-in over $bin (sam is not restarted)" >> $LOG
+    if mount --bind $L/home-standin.sh "$bin"; then
+      echo "$bin" >> $STANDIN
+      mounted=1
+      # LG's Home that runs now is its own program: stop it once, sam starts the stand-in for Home from now on
+      for p in $(pgrep -f "^$bin"); do kill "$p" 2>/dev/null; done
+    else
+      echo "$(up) home: the mount over $bin failed" >> $LOG
+    fi
+  done
+  [ $mounted = 1 ] || { rm -f $STANDIN; exit 1; }
+  HID=$(cat /tmp/cleanyourtv-home-id 2>/dev/null); [ -n "$HID" ] || HID=com.webos.app.home
   (
     sleep 3
     fg=$(luna-send -n 1 -w 5000 -f luna://com.webos.applicationManager/getForegroundAppInfo '{}' </dev/null | grep '"appId"')
+    launched=0
     case "$fg" in
-      *'"appId": ""'*|*com.webos.app.home*|"") luna-send -n 1 -w 10000 -f luna://com.webos.applicationManager/launch '{"id":"com.webos.app.home"}' </dev/null ;;
+      *'"appId": ""'*|*com.webos.app.home*|*com.webos.app.fullhome*|"")
+        launched=1
+        luna-send -n 1 -w 10000 -f luna://com.webos.applicationManager/launch "{\"id\":\"$HID\"}" </dev/null ;;
     esac
-    # the launcher must be open in webapp-mgr by now; otherwise LG's Home comes back until the next reboot
-    open=0
-    for i in $(seq 1 15); do
-      luna-send -n 1 -w 3000 luna://com.palm.webappmanager/listRunningApps '{}' </dev/null | grep -q '"com.webos.app.home"' && { open=1; break; }
-      sleep 2
-    done
-    if [ $open = 1 ]; then
-      echo "$(up) home: the launcher is open in webapp-mgr" >> $LOG
+    if [ $launched = 1 ]; then
+      # the launcher must be open in webapp-mgr by now; otherwise LG's Home comes back until the next reboot
+      open=0
+      for i in $(seq 1 15); do
+        luna-send -n 1 -w 3000 luna://com.palm.webappmanager/listRunningApps '{}' </dev/null | grep -q "\"$HID\"" && { open=1; break; }
+        sleep 2
+      done
+      if [ $open = 1 ]; then
+        echo "$(up) home: the launcher ($HID) is open in webapp-mgr" >> $LOG
+      else
+        echo "$(up) home: the launcher ($HID) did not open; LG's Home is back until the next reboot" >> $LOG
+        sh $L/undo-home.sh temp
+      fi
     else
-      echo "$(up) home: the launcher did not open; LG's Home is back until the next reboot" >> $LOG
-      sh $L/undo-home.sh temp
+      echo "$(up) home: foreground stays at $(echo "$fg" | tr -d ' \n'); stand-in ready for Home key" >> $LOG
     fi
   ) </dev/null >/dev/null 2>&1 &
 else
   echo "$(up) home: mounting the launcher over LG's Home, restarting sam" >> $LOG
-  mount --bind $L/home-overlay $H && { (sleep 3; pkill -9 -f /usr/palm/applications/airplay/LunaExecutable) </dev/null >/dev/null 2>&1 & systemctl restart sam; }
+  mount --bind $L/home-overlay $H && { (sleep 3; pkill -9 -f /usr/palm/applications/airplay/LunaExecutable) </dev/null >/dev/null 2>&1 & svc_restart sam; }
   echo "$(up) home: sam restarted" >> $LOG
   # After the sam restart nothing is in the foreground (black screen). Once sam is back, start Home again
   # unless the user already went somewhere else (e.g. an HDMI input).
   (
-    for i in $(seq 1 60); do systemctl is-active sam >/dev/null && break; sleep 2; done
+    for i in $(seq 1 60); do svc_active sam && break; sleep 2; done
     sh $L/after-sam.sh   # webOS before 7 and the native Home: the services that keep talking to the old sam (issues 23 and 24)
     sleep 8
     fg=$(luna-send -n 1 -w 5000 -f luna://com.webos.applicationManager/getForegroundAppInfo '{}' </dev/null | grep '"appId"')
     case "$fg" in
-      *'"appId": ""'*|*com.webos.app.home*|"")
+      *'"appId": ""'*|*com.webos.app.home*|*com.webos.app.fullhome*|"")
         pkill -f "[a]pp-id=com.webos.app.home"; sleep 2
         luna-send -n 1 -w 10000 -f luna://com.webos.applicationManager/launch '{"id":"com.webos.app.home"}' </dev/null ;;
     esac

@@ -28,7 +28,8 @@ the output of **Share log** (see [Troubleshooting](troubleshooting.md#reporting-
 | 55UN7200PTF | 04.64.00 | webOS 5.6.2 (Node.js 8.12) | **Works**, reported in [#4](https://github.com/lasharor/cleanyourtv-WebOS/issues/4): with the Home Style set to Basic. The notification and layout fixes from that report were released, and the reporter confirmed v1.6.3 works. |
 | OLED55CX3LA | 04.41.35 | webOS 5 (5.4.3, Node.js 8.12) | **Works**, reported in [#13](https://github.com/lasharor/cleanyourtv-WebOS/issues/13): the Live TV guide, the jumping channel list (1.6.0) and channels taking 20 to 30 seconds to start (1.6.7) are fixed. |
 | OLED55CX9LA | 04.50.53 | webOS 5 (5.5.0, Node.js 8.12) | **Problem open** in [#6](https://github.com/lasharor/cleanyourtv-WebOS/issues/6): Home freezes a few seconds after it starts; holding Back frees it. |
-| 43UM7450PLA | 05.40.97 | webOS 4.5 (4.10.0) | **Does not work** ([#2](https://github.com/lasharor/cleanyourtv-WebOS/issues/2)): webOS before 5 has no systemd and a Node.js too old for the service, so the setup stops without changing anything. |
+| OLED65B9SLA | 05.50.00 | webOS 4.5 (4.10.0, Node.js 0.12.2) | **Target of the webOS 4.x backport**: Upstart (`initctl`), `com.webos.app.fullhome` + `com.webos.app.home` native stand-in, Node.js 0.12.2 and Chromium 53. |
+| 43UM7450PLA | 05.40.97 | webOS 4.5 (4.10.0) | **Reported before the webOS 4.x backport** ([#2](https://github.com/lasharor/cleanyourtv-WebOS/issues/2)): earlier releases required systemd and Node.js 8; not yet re-tested with the Upstart + Node 0.12 backport. |
 
 !!! note "What the status words mean"
     *Tested* means the maintainer ran it. *Works* means someone else reported that it works, with the problems they found and
@@ -43,6 +44,7 @@ LG names its webOS versions in two ways: a marketing name and the version the TV
 
 | Marketing name | First shipped on | SDK version reported |
 |---|---|---|
+| webOS 4 / 4.5 | 2018–2019 | 4.x |
 | webOS 5 | 2020 | 5.x |
 | webOS 6 | 2021 | 6.x |
 | webOS 22 | 2022 | 7.x |
@@ -51,7 +53,7 @@ LG names its webOS versions in two ways: a marketing name and the version the TV
 | webOS 25 | 2025 | 10.x |
 | webOS 26 | 2026 | 11.x |
 
-LG also updates older TVs to newer versions, so the SDK version, not the model year, is what counts. The service avoids features the older versions lack: webOS 5 and 6 ship **Node.js 8** (and Chromium 79 on webOS 6). The
+LG also updates older TVs to newer versions, so the SDK version, not the model year, is what counts. The service avoids features the older versions lack: webOS 4.x ships **Node.js 0.12** and **Chromium 53** (with Upstart instead of systemd), and webOS 5 and 6 ship **Node.js 8** (with Chromium 68 on webOS 5 and 79 on webOS 6). The
 details are in [Internals](development/internals.md#older-webos-versions).
 
 ## What differs between webOS versions
@@ -59,14 +61,15 @@ details are in [Internals](development/internals.md#older-webos-versions).
 All per-TV decisions are made in one place, [`helper/tvprofile.js`](https://github.com/lasharor/cleanyourtv-WebOS/blob/main/helper/tvprofile.js),
 from the SDK version and the kind of LG's Home app as it came with the TV. **Share log** and `GET /api/tv` show what was decided.
 
-| | webOS 5 and 6 (SDK 5, 6) | webOS 22 and 23 (SDK 7, 8) | webOS 24 to 26 (SDK 9 to 11) |
-|---|---|---|---|
-| LG's Home app (reports) | native program | native program | flutter or web app; native on a 43UR75006LK (SDK 9.2.2) |
-| How the launcher becomes Home | stand-in over LG's Home program; the app manager is not restarted | stand-in, as on webOS 5 and 6 | launcher folder mounted over LG's Home app and the app manager restarted; the stand-in where LG's Home is native |
-| Setup on unlisted firmware | **Set up anyway** needed | **Set up anyway** needed | continues by itself |
-| Input key | Inputs list started on each press | started on each press | kept ready over the running app on webOS 25 (SDK 10); started on each press on SDK 9 and 11 |
-| Picture notifications window | `overlay` | `overlay` | `topui` from SDK 10, `overlay` on SDK 9 |
-| Node.js, browser engine | Node.js 8; Chromium 68 (webOS 5) or 79 (webOS 6) | Node.js 12 (webOS 23 report) | Node.js 16 (webOS 25) |
+| | webOS 4 (SDK 4) | webOS 5 and 6 (SDK 5, 6) | webOS 22 and 23 (SDK 7, 8) | webOS 24 to 26 (SDK 9 to 11) |
+|---|---|---|---|---|
+| Init system | Upstart (`initctl`) | systemd (`systemctl`) | systemd (`systemctl`) | systemd (`systemctl`) |
+| LG's Home app (reports) | native (`com.webos.app.fullhome` + `com.webos.app.home`) | native program | native program | flutter or web app; native on a 43UR75006LK (SDK 9.2.2) |
+| How the launcher becomes Home | stand-in over `fullhome` and `home` programs; app manager is not restarted | stand-in over LG's Home program; the app manager is not restarted | stand-in, as on webOS 5 and 6 | launcher folder mounted over LG's Home app and the app manager restarted; the stand-in where LG's Home is native |
+| Setup on unlisted firmware | **Set up anyway** needed | **Set up anyway** needed | **Set up anyway** needed | continues by itself |
+| Input key | Inputs list started on each press | Inputs list started on each press | started on each press | kept ready over the running app on webOS 25 (SDK 10); started on each press on SDK 9 and 11 |
+| Picture notifications window | `overlay` | `overlay` | `overlay` | `topui` from SDK 10, `overlay` on SDK 9 |
+| Node.js, browser engine | Node.js 0.12.2; Chromium 53 | Node.js 8; Chromium 68 (webOS 5) or 79 (webOS 6) | Node.js 12 (webOS 23 report) | Node.js 16 (webOS 25) |
 
 The Home row follows LG's Home app, not the version number: a TV with a native Home gets the stand-in whatever its version, and a
 flutter or web Home gets the mount. How both work is in [What it changes on the TV](tv-changes.md#at-boot).

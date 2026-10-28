@@ -13,7 +13,7 @@ P = lambda *a: os.path.join(ROOT, *a)
 PKG = 'com.cleanyourtv.manager'
 SERVICE = PKG + '.service'
 
-version = re.search(r"const VERSION = '([^']+)'", open(P('helper', 'helper.js')).read()).group(1)
+version = re.search(r"(?:const|var) VERSION = '([^']+)'", open(P('helper', 'helper.js')).read()).group(1)
 fe = json.load(open(P('app', 'version.json')))['version']
 if not re.search(r"VERSION\s*=\s*'%s'" % re.escape(fe), open(P('app', 'index.html')).read()):
     sys.exit('app/version.json (%s) and VERSION in app/index.html do not match' % fe)

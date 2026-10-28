@@ -6,72 +6,101 @@
 //                                happen in one go, so two parts of the service can never overwrite each other's settings.
 // Every change of an option, a learned key or the Input-key mode is logged with its source ("manager", "launcher", "setup", ...),
 // so a setting that changes by itself shows up in the service log and in Share log.
-const fs = require('fs');
-const P = require('./paths');
+var fs = require('fs');
+var P = require('./paths'),
+  nc = require('./netcompat');
 
-const OPTIONS = { debloat: true, inputKey: true, liveTv: true };
-const KEYS = { input: '', home: '', voice: '', guide: '', learned: false };
+var MODE_600 = parseInt('600', 8);
+var OPTIONS = { debloat: true, inputKey: true, liveTv: true };
+var KEYS = { input: '', home: '', voice: '', guide: '', learned: false };
 // what the launcher saves with POST /api/config; everything else belongs to the service and the manager
-const LAUNCHER_KEYS = ['dock', 'hidden', 'sort', 'clock', 'topbar', 'runDots', 'wall', 'cards'];
+var LAUNCHER_KEYS = ['dock', 'hidden', 'sort', 'clock', 'topbar', 'runDots', 'wall', 'cards'];
 
 // file: config.json; opts.log(line) for the change log; opts.memory: keep the settings in memory instead (tests)
 function create(file, opts) {
-  const o = opts || {};
-  const log = o.log || (m => console.log(m));
-  let mem = o.memory ? JSON.stringify(o.memory) : null;
-  const read = () => {
+  var o = opts || {};
+  var log =
+    o.log ||
+    function (m) {
+      console.log(m);
+    };
+  var mem = o.memory ? JSON.stringify(o.memory) : null;
+  function read() {
     if (mem !== null) return JSON.parse(mem);
     try {
-      const c = JSON.parse(fs.readFileSync(file, 'utf8'));
+      var c = JSON.parse(fs.readFileSync(file, 'utf8'));
       return c && typeof c === 'object' && !Array.isArray(c) ? c : {};
     } catch (_) {
       return {};
     }
-  };
-  const write = c => {
-    if (mem !== null) return void (mem = JSON.stringify(c));
-    fs.writeFileSync(file + '.tmp', JSON.stringify(c, null, 2), { mode: 0o600 });
+  }
+  function write(c) {
+    if (mem !== null) {
+      mem = JSON.stringify(c);
+      return;
+    }
+    fs.writeFileSync(file + '.tmp', JSON.stringify(c, null, 2), { mode: MODE_600 });
     fs.renameSync(file + '.tmp', file);
-  };
+  }
   // compared with their defaults filled in, so writing a default down is not a change
-  const watched = c => ({
-    options: Object.assign({}, OPTIONS, c.options),
-    keys: Object.assign({}, KEYS, c.keys),
-    picker: { mode: (c.picker || {}).mode },
-  });
+  function watched(c) {
+    return {
+      options: nc.assign({}, OPTIONS, c.options),
+      keys: nc.assign({}, KEYS, c.keys),
+      picker: { mode: (c.picker || {}).mode },
+    };
+  }
   function report(source, before, after) {
-    const a = watched(before),
-      b = watched(after);
-    for (const sec of Object.keys(b))
-      for (const k of Object.keys(Object.assign({}, a[sec], b[sec]))) {
+    var a = watched(before),
+      b = watched(after),
+      secs = Object.keys(b);
+    for (var si = 0; si < secs.length; si++) {
+      var sec = secs[si],
+        ks = Object.keys(nc.assign({}, a[sec], b[sec]));
+      for (var ki = 0; ki < ks.length; ki++) {
+        var k = ks[ki];
         if (JSON.stringify(a[sec][k]) !== JSON.stringify(b[sec][k]))
           log('config: ' + sec + '.' + k + ' ' + JSON.stringify(a[sec][k]) + ' -> ' + JSON.stringify(b[sec][k]) + ' (' + source + ')');
       }
+    }
   }
   function update(source, fn) {
-    const before = read();
-    const draft = JSON.parse(JSON.stringify(before));
-    const r = fn(draft);
-    const next = r && typeof r === 'object' ? r : draft;
+    var before = read();
+    var draft = JSON.parse(JSON.stringify(before));
+    var r = fn(draft);
+    var next = r && typeof r === 'object' ? r : draft;
     write(next);
     report(source, before, next);
     return next;
   }
   return {
-    file,
+    file: file,
     get: read,
-    options: () => Object.assign({}, OPTIONS, read().options || {}),
-    keys: () => Object.assign({}, KEYS, read().keys || {}),
-    update,
+    options: function () {
+      return nc.assign({}, OPTIONS, read().options || {});
+    },
+    keys: function () {
+      return nc.assign({}, KEYS, read().keys || {});
+    },
+    update: update,
     // for code that still thinks in whole files (tests, older modules): replaces everything, still logged
-    replace: (source, c) => update(source, () => c),
+    replace: function (source, c) {
+      return update(source, function () {
+        return c;
+      });
+    },
   };
 }
 
-let shared = null;
+/** @type {ReturnType<typeof create>|null} */
+var shared = null;
 // the service's config.json
-const main = () => shared || (shared = create(P.CONF));
+function main() {
+  return shared || (shared = create(P.CONF));
+}
 // settings kept in memory, for the tests
-const memory = (initial, log) => create('', { memory: initial || {}, log: log || (() => {}) });
+function memory(initial, log) {
+  return create('', { memory: initial || {}, log: log || function () {} });
+}
 
-module.exports = { create, main, memory, OPTIONS, KEYS, LAUNCHER_KEYS };
+module.exports = { create: create, main: main, memory: memory, OPTIONS: OPTIONS, KEYS: KEYS, LAUNCHER_KEYS: LAUNCHER_KEYS };

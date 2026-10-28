@@ -14,8 +14,8 @@ That is all. The launcher is LG's Home from then on.
 - An LG webOS TV rooted with the [Homebrew Channel](https://webosbrew.org).
 - SSH access to the TV as `root`, which the Homebrew Channel can enable (Settings > SSH Server).
 - Internet access on the TV (the install command downloads the package from GitHub).
-- **webOS 5 or newer** (2020 models and later). webOS 4 and older are not supported: they have no systemd and an old Node.js,
-  and the setup stops before it changes anything.
+- **webOS 4 or newer** (Upstart `initctl` on webOS 4.x, `systemd` on webOS 5 and newer). webOS 3 and older are not supported: their
+  Node.js lacks `Promise`, and the setup stops before it changes anything.
 - Firmware from the [tested TVs](tested-tvs.md), or one where LG's Home app is of the flutter or web kind; see
   [What happens on unlisted firmware](#unlisted-firmware).
 
@@ -81,7 +81,7 @@ Its log is `/media/developer/cytv-setup.log`, kept across the restart, with the 
 The setup matches the TV's firmware against [`compat.json`](https://github.com/lasharor/cleanyourtv-WebOS/blob/main/compat.json)
 (it fetches the newest copy from the repository and falls back to the one in the package). A listed firmware is set up directly.
 For an unlisted firmware the setup continues when LG's Home app is the flutter or web kind, and otherwise stops and offers
-**Set up anyway**. On a TV whose Home is LG's native program (webOS 5 to 23) the launcher becomes Home through a stand-in, see
+**Set up anyway**. On a TV whose Home is LG's native program (webOS 4 to 23) the launcher becomes Home through a stand-in, see
 [what differs between webOS versions](tested-tvs.md#what-differs-between-webos-versions). To add a firmware to the list, open an issue with the output of **Share log** ([Troubleshooting](troubleshooting.md)).
 
 ## Installing a dev build

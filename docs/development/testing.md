@@ -8,14 +8,17 @@ sh tools/check.sh
 
 runs everything a push or a release needs:
 
-1. the tests in `tools/test` under **Node.js 8.12.0**, the version webOS 5 and 6 ship (downloaded once from nodejs.org, checksum
+1. the smoke and HTTP integration test (`tools/test-node012.js`) under **Node.js 0.12.2**, the version webOS 4.x ships (downloaded once
+   on Linux x64 and macOS, checksum verified, cached in `~/.cache/cleanyourtv`);
+2. the tests in `tools/test` under **Node.js 8.12.0**, the version webOS 5 and 6 ship (downloaded once from nodejs.org, checksum
    verified, cached in `~/.cache/cleanyourtv`);
-2. the same tests under the Node.js of your computer, when it is another version;
-3. a check that the launcher and the manager pages are built from their sources (`node tools/build-pages.js --check`).
+3. the same tests under the Node.js of your computer, when it is another version;
+4. a check that the launcher and the manager pages are built from their sources (`node tools/build-pages.js --check`).
 
 With `--chromium` it also runs the launcher, the manager and the Inputs picker in **Chromium 68 and 79**, the browser engines of
-webOS 5 and 6 (`tools/oldchrome.js`, headless, against a stand-in service): a page that throws a script error there or does not draw
-its tiles, rows or inputs fails the check. The engines are Chromium snapshots from Google's storage, checked against pinned SHA-256
+webOS 5 and 6 (`tools/oldchrome.js`, headless, against a stand-in service), plus a **Chromium-53 fallback pass** (`@supports` blocks and
+`max()` stripped for webOS 4): a page that throws a script error, does not draw its tiles, rows or inputs, or breaks multi-column geometry
+fails the check. The engines are Chromium snapshots from Google's storage, checked against pinned SHA-256
 sums (about 100 MB each, downloaded once). `CYTV_SHOTS=<folder>` keeps a screenshot of every page per engine; CI keeps them as an
 artifact of each run.
 
@@ -43,8 +46,9 @@ and the TV's own services.
 |---|---|
 | `api.test.js` | Starts the real service (`helper/helper.js`) with a stand-in for `luna-send` and calls every route of the [service API](../api.md). The replies must equal `tools/test/golden/api.json`, recorded from version 1.5.16: a change inside the service cannot change what the launcher, the manager and the scripts see. Record again (`--record`) only when a change of the API is intended. |
 | `service.test.js` | Every service file parses and loads; nothing needs a Node newer than 8.12 (optional chaining, `fs.rmSync`, the `timeout` option of an asynchronous child process, ...); TV paths only in `paths.js`. |
-| `pages.test.js` | The page scripts are ES5 (parsed with a vendored copy of acorn), nothing in the pages is newer than Chromium 68, and the built pages match their sources. |
-| `tvprofile.test.js` | The per-TV decisions for webOS 5, 6.5, 25 and 26 and an unknown TV, from the service and from the shell. |
+| `node012-compat.test.js` | Every file in `helper/` and `scripts/jtool.js` parses as ES5 and avoids post-Node-0.12 APIs (`Buffer.from`/`alloc`, `Set`/`Map`, `Object.assign`, `.includes`, `fs.copyFileSync`, `.mtimeMs`, `'latin1'`); exercises `netcompat.js` polyfills (`PolyURL`, `PolySearchParams`, `bufFrom`, `bufAlloc`, `timingSafeEqual`, `copyFileSync`). |
+| `pages.test.js` | The page scripts are ES5 (parsed with a vendored copy of acorn), nothing in the pages breaks Chromium 53+ (including the Flexbox `#grid` fallback, `hour12` clock fallback and picker `min-width` fallback), and the built pages match their sources. |
+| `tvprofile.test.js` | The per-TV decisions for webOS 4.10, 5, 6.5, 25 and 26 and an unknown TV, from the service and from the shell. |
 | `scripts.test.js` | The shell scripts parse; an update keeps the options the user chose; the setup asks `tvprofile.js`; the debloat's `/etc/hosts` fallback. |
 | `manager.test.js` | Options, keys and the Input-key modes in the manager API; the settings store and its change log. |
 | `updates.test.js` | Update checks against a stand-in for the GitHub API: stable and test channels, builds of one version, a dropped connection. |

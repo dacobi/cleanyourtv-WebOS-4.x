@@ -22,20 +22,21 @@ disk, and a reboot without the boot scripts brings LG's Home back.
 | Downloads, programs, luna, TV paths | `helper/fetch.js`, `helper/exec.js`, `helper/luna.js`, `helper/paths.js` |
 | The manager app and its API (updates, options, keys) | `manager/src/` (built into `manager/app/index.html`), `helper/manager.js`, `helper/updates.js`, `helper/selfupdate.js` |
 | The Input key, the Inputs list over the running app | `helper/inputkey.js`, `helper/inputhook.js`, `helper/picker.js`, `picker/app/`, `scripts/inputkey.sh` |
-| Home takeover at boot, rollback, undo | `scripts/10-cleanyourtv-home`, `scripts/stage-home.sh`, `scripts/undo-home.sh`, `scripts/bootstrap.sh` |
+| Home takeover at boot, rollback, undo | `scripts/10-cleanyourtv-home`, `scripts/stage-home.sh`, `scripts/undo-home.sh`, `scripts/bootstrap.sh`, `scripts/svc.sh` |
 | Live TV: playlist, guide, favourites | `helper/live.js` and `app/src/js/live.js` |
 | Picture notifications | `notify/app/`, `helper/notify.js`, `helper/notifyapi.js` |
 | Voice (Moonshine, OpenRouter, Home Assistant) | `helper/voice.js` (microphone, recogniser), `helper/answers.js` (Assist, OpenRouter, your server), `voice/` |
 | Themes | `helper/themeschema.js` (the schema), `helper/theme.js` (downloads), `themes/` (read from GitHub), `docs/themes.md` |
 | Wallpapers | `helper/wallpapers.js` (library, phone page, Immich sync), `app/src/js/wall.js` (rotation on Home), `docs/wallpapers.md` |
 | The report people attach to issues | `helper/sharelog.js` (`node sharelog.js --print` prints it) |
-| Node 8 compatibility helpers, diagnostics | `helper/netcompat.js`, `helper/diag.js` |
-| Build and checks | `ipk/build.py`, `tools/build-pages.js`, `tools/check.sh`, the tests in `tools/test/` |
+| Node 0.12 / 8 compatibility helpers, diagnostics | `helper/netcompat.js`, `helper/diag.js` |
+| Build and checks | `ipk/build.py`, `tools/build-pages.js`, `tools/check.sh`, `tools/test-node012.js`, the tests in `tools/test/` |
 
 ## Facts about the TV that matter
 
-- Test TV: LG OLED65G26LA, webOS 25 (SDK 10), Node.js 16. **webOS 5 and 6 have Node.js 8.12** and an older Chromium (68 on webOS 5, 79 on
-  webOS 6). The userland is 32-bit ARM on a 64-bit kernel.
+- Test TVs: LG OLED65G26LA on webOS 25 (SDK 10, Node.js 16) and LG OLED65B9SLA on webOS 4.10 (SDK 4.10, Upstart `initctl`, Node.js 0.12.2,
+  Chromium 53, active Home `com.webos.app.fullhome`). **webOS 5 and 6 have Node.js 8.12** and Chromium 68 / 79. The userland is 32-bit ARM
+  on a 64-bit kernel.
 - The root filesystem, `/usr` and `/etc` are read-only. Writable: `/media/developer`, `/var`, `/tmp`. Use bind mounts, never write into `/usr`.
 - Where things are on the TV: `/media/developer/cleanyourtv/` (service files, `config.json`, `app/`, `live/`, `themes/`, `backup/`),
   `/var/lib/webosbrew/init.d/` (boot scripts, run by the Homebrew Channel), `/media/developer/cytv-setup.log` (setup log),
@@ -55,12 +56,14 @@ disk, and a reboot without the boot scripts brings LG's Home back.
    delete files or change boot scripts on your own.
 2. **Never put private data in the repository, an issue or a pull request:** no playlist addresses, access keys, tokens, IP addresses,
    user or device names, webhook addresses. Mask them. `tools/diagnose.sh` and Share log already mask what they can; read the output.
-3. **The service must run on Node.js 8.12** (webOS 5/6): no `??`, `?.`, `fs.rmSync`, `fs.cpSync`, `mkdirSync({recursive})`, `crypto.randomInt`,
-   `fs.promises`, global `URL`, `http.get(url, options)`, and no `timeout` option on child processes (use `diag.execFile`). Use
-   `helper/netcompat.js`. **The pages are written for Chromium 68 and up**: ES5 style, only transform and opacity animate (the GPU is weak),
-   no flex `gap` (Chromium before 84 ignores it): space flex children with sibling margins.
+3. **The service must run on Node.js 0.12.2** (webOS 4.x) and **Node.js 8.12** (webOS 5/6): ES5 + `Promise` only in `helper/*.js` and
+   `scripts/jtool.js` (no `let`/`const`/arrows/templates/`async`/`Set`/`Map`/`Buffer.from`/`Buffer.alloc`/`Object.assign`/`.includes`/`fs.copyFileSync`/`.mtimeMs`/`'latin1'`,
+   and no `timeout` option on child processes — use `diag.execFile` and `helper/netcompat.js`; use `scripts/svc.sh` instead of calling
+   `systemctl` directly). **The pages are written for Chromium 53 and up**: ES5 style, only transform and opacity animate (the GPU is weak),
+   no flex `gap` (Chromium before 84 ignores it): space flex children with sibling margins, and keep Flexbox/`hour12` fallbacks before
+   `@supports (display: grid)`.
 4. **A fix needs a test** in `tools/test/` (the file of that area) when it can be tested without a TV, and everything must pass:
-   `sh tools/check.sh` (the tests under Node 8.12.0, downloaded once with a pinned checksum, and the current Node; the built pages).
+   `sh tools/check.sh` (the tests under Node 0.12.2, Node 8.12.0, and the current Node; the built pages).
    `tools/test/api.test.js` compares every API reply with a recorded one: a reply that changes needs a reason. Say plainly what was
    checked on a real TV and what was not.
 5. **Documentation must match the code.** Change the page in `docs/` when behaviour changes, and the README if it is mentioned there.

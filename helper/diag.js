@@ -3,18 +3,23 @@
 // /tmp; a later start that finds the file of a process that is gone logs those operations, and the Share log report includes them.
 // execFile() is a child-process helper that handles the timeout itself instead of Node's `timeout` option: the child is killed once and
 // the callback runs once, so no handle is closed twice.
-const fs = require('fs'),
+var fs = require('fs'),
   cp = require('child_process');
-const FILE = require('./paths').RUNFILE,
+var nc = require('./netcompat');
+var FILE = require('./paths').RUNFILE,
   KEEP = 25;
-let ops = [],
+/** @type {string[]} */
+var ops = [],
+  /** @type {any} */
   timer = null,
   started = 0;
-const t = () => Math.round(Date.now() / 1000);
+function t() {
+  return Math.round(Date.now() / 1000);
+}
 function flush() {
   timer = null;
   try {
-    fs.writeFileSync(FILE + '.tmp', JSON.stringify({ pid: process.pid, started, ops }));
+    fs.writeFileSync(FILE + '.tmp', JSON.stringify({ pid: process.pid, started: started, ops: ops }));
     fs.renameSync(FILE + '.tmp', FILE);
   } catch (_) {}
 }
@@ -29,16 +34,16 @@ function note(kind, what) {
         .slice(0, 120)
   );
   if (ops.length > KEEP) ops.shift();
-  if (!timer) timer = setTimeout(flush, 500);
+  if (started && !timer) timer = setTimeout(flush, 500);
 }
 // at start: report how the previous process ended, then take over the file
 function start() {
-  let prev = null;
+  var prev = null;
   try {
     prev = JSON.parse(fs.readFileSync(FILE, 'utf8'));
   } catch (_) {}
   if (prev && prev.pid && prev.pid !== process.pid) {
-    let alive = false;
+    var alive = false;
     try {
       process.kill(prev.pid, 0);
       alive = true;
@@ -55,24 +60,24 @@ function start() {
   }
   started = t();
   flush();
-  const bye = () => {
+  function bye() {
     try {
       fs.unlinkSync(FILE);
     } catch (_) {}
-  };
+  }
   process.on('exit', bye);
-  process.on('SIGTERM', () => {
+  process.on('SIGTERM', function () {
     bye();
     process.exit(0);
   });
-  process.on('SIGINT', () => {
+  process.on('SIGINT', function () {
     bye();
     process.exit(0);
   });
 }
 // cp.execFile without the `timeout` option; the callback gets (error, stdout, stderr)
 function execFile(cmd, args, opts, cb) {
-  const o = Object.assign({}, opts),
+  var o = nc.assign({}, opts),
     ms = o.timeout,
     max = o.maxBuffer || 1 << 20;
   delete o.timeout;
@@ -82,44 +87,54 @@ function execFile(cmd, args, opts, cb) {
     cmd.split('/').pop() +
       ' ' +
       (args || [])
-        .filter(a => typeof a === 'string')
+        .filter(function (a) {
+          return typeof a === 'string';
+        })
         .join(' ')
         .slice(0, 100)
   );
-  let done = false,
-    timer = null,
+  var done = false,
+    /** @type {any} */
+    killTimer = null,
     out = '',
     err = '',
     child;
-  const fin = e => {
+  function fin(e) {
     if (done) return;
     done = true;
-    clearTimeout(timer);
+    clearTimeout(killTimer);
     cb(e, out, err);
-  };
+  }
   try {
-    child = cp.spawn(cmd, args || [], Object.assign({}, o, { stdio: ['ignore', 'pipe', 'pipe'] }));
+    child = cp.spawn(cmd, args || [], nc.assign({}, o, { stdio: ['ignore', 'pipe', 'pipe'] }));
   } catch (e) {
     fin(e);
     return null;
   }
-  child.stdout.on('data', d => {
+  child.stdout.on('data', function (d) {
     if (out.length < max) out += d;
   });
-  child.stderr.on('data', d => {
+  child.stderr.on('data', function (d) {
     if (err.length < max) err += d;
   });
   child.on('error', fin);
-  child.on('close', (code, sig) =>
-    fin(code === 0 ? null : Object.assign(new Error('exit ' + (code !== null ? code : sig)), { code, killed: !!sig }))
-  );
+  child.on('close', function (code, sig) {
+    fin(code === 0 ? null : nc.assign(new Error('exit ' + (code !== null ? code : sig)), { code: code, killed: !!sig }));
+  });
   if (ms)
-    timer = setTimeout(() => {
+    killTimer = setTimeout(function () {
       try {
         child.kill('SIGKILL');
       } catch (_) {}
-      fin(Object.assign(new Error('timed out'), { killed: true }));
+      fin(nc.assign(new Error('timed out'), { killed: true }));
     }, ms);
   return child;
 }
-module.exports = { start, note, execFile, ops: () => ops.slice() };
+module.exports = {
+  start: start,
+  note: note,
+  execFile: execFile,
+  ops: function () {
+    return ops.slice();
+  },
+};

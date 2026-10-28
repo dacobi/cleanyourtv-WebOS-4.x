@@ -14,6 +14,7 @@ run(async () => {
       { appId: 'youtube.leanback.v4' },
       { id: 'netflix' },
       { id: 'com.webos.app.home' },
+      { id: 'com.webos.app.fullhome' },
       { id: 'com.cleanyourtv.picker' },
       { id: 'airplay' },
       null,
@@ -22,8 +23,8 @@ run(async () => {
   );
   ok(listed.map(a => a.id).join() === 'netflix,youtube.leanback.v4', 'running apps the launcher knows, once each (by id or appId)');
   ok(
-    !listed.some(a => a.id === 'com.webos.app.home' || /cleanyourtv/.test(a.id)) && !listed.some(a => a.id === 'airplay'),
-    'never Home, never our own apps, never apps the launcher does not list'
+    !listed.some(a => /^com\.webos\.app\.(full)?home$/.test(a.id) || /cleanyourtv/.test(a.id)) && !listed.some(a => a.id === 'airplay'),
+    'never Home (home or fullhome), never our own apps, never apps the launcher does not list'
   );
   ok(listed[1].title === 'YouTube', 'with the title the launcher shows');
 
@@ -44,7 +45,8 @@ run(async () => {
   x = await call(r, '/api/running/close', 'POST', { id: 'com.cleanyourtv.picker' });
   ok(x.j.returnValue === false && !calls.some(c => /close.* com.cleanyourtv/.test(c)), 'our own picker cannot be closed this way');
   x = await call(r, '/api/running/close', 'POST', { id: 'com.webos.app.home' });
-  ok(x.j.returnValue === false, 'Home cannot be closed');
+  const xf = await call(r, '/api/running/close', 'POST', { id: 'com.webos.app.fullhome' });
+  ok(x.j.returnValue === false && xf.j.returnValue === false, 'Home (home or fullhome) cannot be closed');
   calls = [];
   x = await call(r, '/api/running/close', 'POST', { id: 'netflix' });
   ok(

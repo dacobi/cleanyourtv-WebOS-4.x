@@ -5,23 +5,26 @@
 //   tr(lang, text)     -> the text in that language (whole, or the parts joined by " · " or lines, or a %s / %d template)
 //   script(lang, html) -> a <script> with the translations a page's own script uses and t() (i18n/runtime.js), set to that language
 // The service's own messages stay English: the TV's screens translate them where they show them.
-const fs = require('fs'),
+var fs = require('fs'),
   path = require('path');
 
-const DIRS = [path.join(__dirname, 'i18n'), path.join(__dirname, '..', 'i18n')];
-let cache = null;
+var DIRS = [path.join(__dirname, 'i18n'), path.join(__dirname, '..', 'i18n')];
+/** @type {{langs: Record<string, any>, runtime: string}|null} */
+var cache = null;
 function load() {
   if (cache) return cache;
   cache = { langs: {}, runtime: '' };
-  for (const d of DIRS) {
-    let files = [];
+  for (var di = 0; di < DIRS.length; di++) {
+    var d = DIRS[di];
+    var files = [];
     try {
       files = fs.readdirSync(d);
     } catch (_) {
       continue;
     }
-    for (const f of files) {
-      const m = /^([a-z]{2})\.json$/.exec(f);
+    for (var fi = 0; fi < files.length; fi++) {
+      var f = files[fi];
+      var m = /^([a-z]{2})\.json$/.exec(f);
       if (!m) continue;
       try {
         cache.langs[m[1]] = JSON.parse(fs.readFileSync(path.join(d, f), 'utf8'));
@@ -35,24 +38,29 @@ function load() {
   return cache;
 }
 function lang(req, chosen) {
-  const L = load().langs,
+  var L = load().langs,
     acc = String((req && req.headers && req.headers['accept-language']) || '');
-  const asked = acc
+  var asked = acc
     .split(',')
-    .map(p => {
-      const m = /^\s*([a-zA-Z]{2})(?:-[a-zA-Z0-9]+)?\s*(?:;\s*q=([0-9.]+))?/.exec(p);
+    .map(function (p) {
+      var m = /^\s*([a-zA-Z]{2})(?:-[a-zA-Z0-9]+)?\s*(?:;\s*q=([0-9.]+))?/.exec(p);
       return m ? { c: m[1].toLowerCase(), q: m[2] === undefined ? 1 : parseFloat(m[2]) } : null;
     })
     .filter(Boolean)
-    .sort((a, b) => b.q - a.q);
-  for (const a of asked) if (a.c === 'en' || (L[a.c] && L[a.c]._name && a.c !== 'en')) return a.c;
+    .sort(function (a, b) {
+      return /** @type {any} */ (b).q - /** @type {any} */ (a).q;
+    });
+  for (var i = 0; i < asked.length; i++) {
+    var a = /** @type {any} */ (asked[i]);
+    if (a.c === 'en' || (L[a.c] && L[a.c]._name && a.c !== 'en')) return a.c;
+  }
   return chosen && chosen !== 'en' && L[chosen] ? chosen : 'en';
 }
 
-// the plural form of n (Unicode CLDR categories), for translations with forms {"one": ..., "other": ...}; Node 8 has no
+// the plural form of n (Unicode CLDR categories), for translations with forms {"one": ..., "other": ...}; Node 0.12 and 8 have no
 // Intl.PluralRules, so the rules of the common languages are written out (as in i18n/runtime.js)
 function pluralForm(code, n) {
-  const i = Math.floor(Math.abs(n)),
+  var i = Math.floor(Math.abs(n)),
     m10 = i % 10,
     m100 = i % 100,
     few = m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14);
@@ -66,14 +74,18 @@ function pluralForm(code, n) {
   if (code === 'he') return i === 1 ? 'one' : i === 2 ? 'two' : 'other';
   return n === 1 ? 'one' : 'other';
 }
-const form = (code, v, n) =>
-  typeof v === 'string' ? v : !v ? '' : (n !== undefined && v[pluralForm(code, +String(n).replace(',', '.'))]) || v.other || '';
-const templates = {};
+function form(code, v, n) {
+  return typeof v === 'string' ? v : !v ? '' : (n !== undefined && v[pluralForm(code, +String(n).replace(',', '.'))]) || v.other || '';
+}
+/** @type {Record<string, Array<{re: RegExp, key: string, joined: boolean}>>} */
+var templates = {};
 function tpl(code) {
   if (templates[code]) return templates[code];
-  const T = load().langs[code] || {},
-    out = [];
-  for (const k of Object.keys(T))
+  var T = load().langs[code] || {},
+    out = [],
+    ks = Object.keys(T);
+  for (var i = 0; i < ks.length; i++) {
+    var k = ks[i];
     if (k.charAt(0) !== '_' && /%[sd]/.test(k))
       out.push({
         re: new RegExp(
@@ -87,60 +99,89 @@ function tpl(code) {
         key: k,
         joined: /\n| \u00B7 /.test(k),
       });
-  out.sort((a, b) => b.key.length - a.key.length);
+  }
+  out.sort(function (a, b) {
+    return b.key.length - a.key.length;
+  });
   return (templates[code] = out);
 }
 function tr(code, s) {
-  const T = load().langs[code];
+  var T = load().langs[code];
   if (!T || s === null || s === undefined || s === '') return s;
   s = String(s);
   if (Object.prototype.hasOwnProperty.call(T, s) && T[s]) return form(code, T[s]);
-  const viaTpl = joined => {
-    for (const x of tpl(code)) {
+  function viaTpl(joined) {
+    var list = tpl(code);
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i];
       if (x.joined !== joined) continue;
-      const m = x.re.exec(s);
+      var m = x.re.exec(s);
       if (m) {
-        let j = 1,
+        var j = 1,
           k = 0,
           first = 0;
-        x.key.replace(/%[sd]/g, h => {
+        x.key.replace(/%[sd]/g, function (h) {
           k++;
           if (h === '%d' && !first) first = k;
           return h;
         });
-        return form(code, T[x.key], first ? m[first] : undefined).replace(/%[sd]/g, () => tr(code, m[j++]));
+        return form(code, T[x.key], first ? m[first] : undefined).replace(/%[sd]/g, function () {
+          return tr(code, m[j++]);
+        });
       }
     }
     return null;
-  };
-  let r = viaTpl(true);
+  }
+  var r = viaTpl(true);
   if (r !== null) return r;
   if (s.indexOf('\n') >= 0)
     return s
       .split('\n')
-      .map(x => tr(code, x))
+      .map(function (x) {
+        return tr(code, x);
+      })
       .join('\n');
   if (s.indexOf(' · ') >= 0)
     return s
       .split(' · ')
-      .map(x => tr(code, x))
+      .map(function (x) {
+        return tr(code, x);
+      })
       .join(' · ');
   r = viaTpl(false);
   return r !== null ? r : s;
 }
 // the texts of a page's script that have a translation: every key whose fixed parts all appear in the script
 function script(code, js) {
-  const T = load().langs[code] || {},
+  var T = load().langs[code] || {},
+    /** @type {Record<string, any>} */
     used = code === 'en' ? {} : { _name: T._name || code, _dir: T._dir === 'rtl' ? 'rtl' : 'ltr' };
-  const text = String(js || '').replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
-  for (const k of Object.keys(T)) {
+  var text = String(js || '').replace(/\\u([0-9a-fA-F]{4})/g, function (m, h) {
+    return String.fromCharCode(parseInt(h, 16));
+  });
+  var ks = Object.keys(T);
+  for (var i = 0; i < ks.length; i++) {
+    var k = ks[i];
     if (k.charAt(0) === '_' || !T[k]) continue;
-    const parts = k.split(/%[sd]/).filter(f => f.trim().length > 0);
-    if (parts.length && parts.every(f => text.indexOf(f) >= 0)) used[k] = T[k];
+    var parts = k.split(/%[sd]/).filter(function (f) {
+      return f.trim().length > 0;
+    });
+    if (
+      parts.length &&
+      parts.every(function (f) {
+        return text.indexOf(f) >= 0;
+      })
+    )
+      used[k] = T[k];
   }
   // in English only the plural forms ("%d photo" / "%d photos") come from the file
-  if (code === 'en') for (const k of Object.keys(used)) if (typeof used[k] !== 'object') delete used[k];
-  const table = Object.keys(used).length ? { [code]: used } : {};
+  if (code === 'en') {
+    var uks = Object.keys(used);
+    for (var j = 0; j < uks.length; j++) if (typeof used[uks[j]] !== 'object') delete used[uks[j]];
+  }
+  /** @type {Record<string, any>} */
+  var table = {};
+  if (Object.keys(used).length) table[code] = used;
   return (
     '<script>var I18N = ' +
     JSON.stringify(table).replace(/</g, '\\u003c') +
@@ -152,4 +193,4 @@ function script(code, js) {
   );
 }
 
-module.exports = { lang, tr, script, load };
+module.exports = { lang: lang, tr: tr, script: script, load: load };

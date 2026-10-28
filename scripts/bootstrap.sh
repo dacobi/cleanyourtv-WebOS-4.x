@@ -15,6 +15,8 @@ INITD=$R/var/lib/webosbrew/init.d
 J="node $S/scripts/jtool.js"          # JSON helper (node, not python3)
 TV="node $S/helper/tvprofile.js"      # per-TV decisions
 HOME_DIR=$R/usr/palm/applications/com.webos.app.home
+FULLHOME_DIR=$R/usr/palm/applications/com.webos.app.fullhome
+. "$S/scripts/svc.sh"
 
 MODE=${1:-install}; [ $# -gt 0 ] && shift
 WANT=""; [ "$MODE" = update ] && { WANT=$1; shift; }
@@ -32,7 +34,7 @@ say() { echo "[cleanyourtv] $*"; }
 warn() { echo "[cleanyourtv] WARNING: $*" >&2; }
 die() { echo "[cleanyourtv] ERROR: $*" >&2; exit 1; }
 luna() { luna-send -n 1 -w 5000 -f "luna://$1" "$2" </dev/null 2>/dev/null; }
-svc_version() { sed -n "s/^const VERSION = '\(.*\)';/\1/p" "$1" | head -1; }
+svc_version() { sed -n "s/^var VERSION = '\(.*\)';/\1/p; s/^const VERSION = '\(.*\)';/\1/p" "$1" | head -1; }
 service_answers() { curl -s -m 3 http://127.0.0.1:8765/api/version | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'; }
 opt() { $J opt "$D/config.json" "$1"; }
 
@@ -43,9 +45,9 @@ preflight() {
   [ -d "$INITD" ] || die "$INITD not found: root with the Homebrew Channel is required (https://rootmy.tv)"
   [ -w $MD ] || die "/media/developer is not writable"
   for t in tar node; do command -v $t >/dev/null || die "missing tool: $t"; done
-  # hard requirements: --force does not skip these (older webOS has no systemd and an old Node that cannot run the service)
-  command -v systemctl >/dev/null || die "this TV has no systemd (webOS older than 5): CleanYourTV needs a newer webOS and cannot be set up here. Nothing was changed."
-  node -e '(()=>1)()' >/dev/null 2>&1 || die "this TV's Node.js ($(node -v 2>&1 | head -1)) is too old for the service: CleanYourTV needs a newer webOS and cannot be set up here. Nothing was changed."
+  # hard requirements: --force does not skip these (systemd on webOS 5+ or Upstart initctl on webOS 4.x, and Node with Promise)
+  ([ "${CYTV_INIT:-}" != upstart ] && command -v systemctl >/dev/null) || command -v initctl >/dev/null || die "this TV has neither systemd nor initctl: CleanYourTV cannot be set up here. Nothing was changed."
+  node -e 'if(typeof Promise!=="function")process.exit(1)' >/dev/null 2>&1 || die "this TV's Node.js ($(node -v 2>&1 | head -1)) is too old for the service (no Promise): CleanYourTV needs webOS 4 or newer and cannot be set up here. Nothing was changed."
   [ -f $S/helper/helper.js ] && [ -f $S/scripts/10-cleanyourtv-home ] || die "the service files are incomplete in $S"
   [ -f $HOME_DIR/appinfo.json ] || die "stock Home app not found at $HOME_DIR"
   if grep -q " $HOME_DIR " /proc/mounts && [ ! -f $D/backup/home-appinfo.orig.json ]; then
@@ -100,8 +102,9 @@ check_compat() {
 backup() {
   mkdir -p $D/backup
   [ -f $D/backup/home-appinfo.orig.json ] || cp $HOME_DIR/appinfo.json $D/backup/home-appinfo.orig.json
+  [ -f $FULLHOME_DIR/appinfo.json ] && [ ! -f $D/backup/fullhome-appinfo.orig.json ] && cp $FULLHOME_DIR/appinfo.json $D/backup/fullhome-appinfo.orig.json
   [ -f $D/backup/hosts.orig ] || cp /etc/hosts $D/backup/hosts.orig
-  [ -f $D/backup/processes.orig.txt ] || { ps > $D/backup/processes.orig.txt 2>&1; systemctl list-units --no-legend > $D/backup/units.orig.txt 2>&1; date > $D/backup/date.txt; }
+  [ -f $D/backup/processes.orig.txt ] || { ps > $D/backup/processes.orig.txt 2>&1; svc_list > $D/backup/units.orig.txt 2>&1; date > $D/backup/date.txt; }
   # an update keeps the running version's files, so a failed start can be undone
   if [ "$MODE" = update ]; then
     (cd $D && tar czf backup/service-prev.tgz $(ls *.js *.sh 10-cleanyourtv-home 15-cleanyourtv-debloat 2>/dev/null) inputhook 2>/dev/null)
@@ -126,7 +129,7 @@ copy_files() {
 
 # ---- the launcher that ships with the package, unless a newer one is already installed ----
 install_launcher() {
-  if [ ! -f $D/app/index.html ] || $J newer $S/payload/app/version.json $D/app/version.json || { [ -f $S/payload/app/BUILD ] && ! cmp -s $S/payload/app/BUILD $D/app/BUILD; }; then
+  if [ ! -f $D/app/index.html ] || $J newer $S/payload/app/version.json $D/app/version.json || { ! $J newer $D/app/version.json $S/payload/app/version.json && ! cmp -s $S/payload/app/index.html $D/app/index.html; } || { [ -f $S/payload/app/BUILD ] && ! cmp -s $S/payload/app/BUILD $D/app/BUILD; }; then
     rm -rf $D/app.prev; [ -d $D/app ] && mv $D/app $D/app.prev
     mkdir -p $D/app && cp $S/payload/app/* $D/app/
     say "launcher $(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' $D/app/version.json) in place"
@@ -159,12 +162,13 @@ ensure_apps() {
   [ $missing = 0 ] && return 0
   say "registering the overlay apps (the screen blinks once)"
   (sleep 3; pkill -9 -f /usr/palm/applications/airplay/LunaExecutable) </dev/null >/dev/null 2>&1 &
-  systemctl restart sam
-  for i in $(seq 1 60); do systemctl is-active sam >/dev/null && break; sleep 2; done
+  svc_restart sam
+  for i in $(seq 1 60); do svc_active sam && break; sleep 2; done
   sh $D/after-sam.sh </dev/null
   sleep 10
-  pkill -f "[a]pp-id=com.webos.app.home"; sleep 2
-  luna-send -n 1 -w 10000 -f luna://com.webos.applicationManager/launch '{"id":"com.webos.app.home"}' </dev/null >/dev/null
+  HID=$(cat $R/tmp/cleanyourtv-home-id 2>/dev/null); [ -n "$HID" ] || HID=com.webos.app.home
+  pkill -f "[a]pp-id=$HID"; sleep 2
+  luna-send -n 1 -w 10000 -f luna://com.webos.applicationManager/launch "{\"id\":\"$HID\"}" </dev/null >/dev/null
 }
 
 # ---- an update: restart the service on the new files; go back to the previous files if it does not answer ----
@@ -190,6 +194,7 @@ restart_for_update() {
   ensure_apps
   # the overlay apps and the launcher may have new pages: restart the hidden picker (the service starts it again) and reload Home
   luna-send -n 1 -w 3000 luna://com.webos.applicationManager/closeByAppId '{"id":"com.cleanyourtv.picker"}' </dev/null >/dev/null 2>&1
+  luna-send -n 1 -w 3000 luna://com.webos.applicationManager/close '{"id":"com.cleanyourtv.picker"}' </dev/null >/dev/null 2>&1
   if [ "$FRONTEND_NEW" = 1 ] && { grep -q " $HOME_DIR " /proc/mounts || [ -f $R/tmp/cleanyourtv-home-standin ]; }; then
     sh $D/reload-home.sh </dev/null
   fi
@@ -209,9 +214,10 @@ verify() {
   ok=0
   for i in $(seq 1 40); do
     sleep 3
-    type=$(luna com.webos.applicationManager/getAppInfo '{"id":"com.webos.app.home"}' | sed -n 's/.*"type": *"\([^"]*\)".*/\1/p' | head -1)
+    HID=$(cat $R/tmp/cleanyourtv-home-id 2>/dev/null); [ -n "$HID" ] || HID=com.webos.app.home
+    type=$(luna com.webos.applicationManager/getAppInfo "{\"id\":\"$HID\"}" | sed -n 's/.*"type": *"\([^"]*\)".*/\1/p' | head -1)
     # the stand-in way (LG's native Home): sam still sees LG's native Home, and webapp-mgr holds the launcher
-    if [ -f $R/tmp/cleanyourtv-home-standin ] && luna com.palm.webappmanager/listRunningApps '{}' | grep -q '"com.webos.app.home"'; then type=web; fi
+    if [ -f $R/tmp/cleanyourtv-home-standin ] && luna com.palm.webappmanager/listRunningApps '{}' | grep -q "\"$HID\""; then type=web; fi
     hv=$(service_answers)
     if [ "$type" = web ] && [ "$hv" = "$VERSION" ]; then ok=1; break; fi
   done
@@ -229,7 +235,7 @@ verify() {
 finish() {
   ensure_apps
   say "done. Hold OK on an app to customise the dock, or use the Customise button at the top right."
-  [ -d $R/usr/palm/applications/com.webos.app.fullhome ] && say "This TV also has LG's full-screen Home. If the Home button opens that instead of CleanYourTV: TV Settings > General > Home Settings > Home Style > Basic."
+  [ -d $FULLHOME_DIR ] && ! grep -q fullhome $R/tmp/cleanyourtv-home-standin 2>/dev/null && say "This TV also has LG's full-screen Home. If the Home button opens that instead of CleanYourTV: TV Settings > General > Home Settings > Home Style > Basic."
   say "Back to LG's Home any time: switch off 'CleanYourTV as Home' in the manager app, or run: sh $D/undo-home.sh"
 }
 

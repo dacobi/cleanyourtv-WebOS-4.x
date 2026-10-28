@@ -11,7 +11,7 @@ About a minute after every boot, the debloat:
 |---|---|
 | **Ads** | Prevents `admanager` and `adoverlay-service` from starting, and adds `eic.ads.lgtvcommon.com`, `nl.ad.lgsmartad.com` and `nl.info.lgsmartad.com` to `/etc/hosts`, pointing at `127.0.0.1` and `::1` and marked `# cleanyourtv-debloat` (other entries are untouched). |
 | **Viewing tracking (LivePlus)** | Prevents `acr2` from starting: it recognises what is on screen and reports it. |
-| **Telemetry logs** | Stops the systemd services `remotelogger` and `service-logger`. |
+| **Telemetry logs** | Stops the systemd or Upstart services `remotelogger` and `service-logger`. |
 | **Suggestions and nudges** | Stops `contentminer` and `nudge`, and prevents `sportsalarm` from starting. |
 
 A program is prevented from starting by mounting a do-nothing stub over it (in RAM; the real files are not changed). Where

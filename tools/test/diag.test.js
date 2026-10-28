@@ -32,11 +32,16 @@ run(async () => {
   const lr = await luna('luna://x/y', {}, { timeout: 2000 });
   ok(lr.returnValue === false && typeof lr.errorText === 'string', 'luna without luna-send answers returnValue false, never throws');
 
+  try {
+    fs.unlinkSync(process.env.CYTV_RUNFILE);
+  } catch (_) {}
   diag.note('request', 'GET http://192.168.1.3:36400/live/user/secret/123.m3u8');
   ok(
     diag.ops().some(o => /\/live\/\*\/\*\/123/.test(o)) && !diag.ops().some(o => /secret/.test(o)),
     'logged operations hide the credentials of a stream address'
   );
+  await new Promise(res => setTimeout(res, 600));
+  ok(!fs.existsSync(process.env.CYTV_RUNFILE), 'standalone scripts that call diag.note without diag.start do not leave a stale runfile');
   fs.writeFileSync(
     process.env.CYTV_RUNFILE,
     JSON.stringify({ pid: 999999, started: 1790000000, ops: ['1790000001 exec luna-send -n 1', '1790000002 request GET http://x/y'] })

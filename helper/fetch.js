@@ -11,27 +11,31 @@
 // any status instead of rejecting what is not 200), statusText(status) for the message of a refused status, unzip: 'header'
 // (default) or 'sniff' (also unpack a body that starts like gzip). Errors carry .code: url, http, local, redirects, status (with
 // .status), lost, timeout, big.
-const http = require('http'),
+var http = require('http'),
   https = require('https'),
   zlib = require('zlib'),
   crypto = require('crypto'),
   fs = require('fs');
-const nc = require('./netcompat'),
-  { URL } = nc;
-const diag = require('./diag');
+var nc = require('./netcompat'),
+  URL = nc.URL;
+var diag = require('./diag');
 
 function fail(message, code, status) {
-  const e = /** @type {Error & {code?: string, status?: number}} */ (new Error(message));
+  var e = /** @type {Error & {code?: string, status?: number}} */ (new Error(message));
   e.code = code;
   if (status) e.status = status;
   return e;
 }
-const LOCAL = /^(localhost|127\.|0\.0\.0\.0|\[?::1\]?$)/i;
+var LOCAL = /^(localhost|127\.|0\.0\.0\.0|\[?::1\]?$)/i;
+
+function allowed(a) {
+  return typeof a === 'function' ? !!a() : a !== false;
+}
 
 // one request with its redirects; resolves {res, url} once a response with the wanted status has its headers
 function connect(url, o, hops) {
-  return new Promise((resolve, reject) => {
-    let u;
+  return new Promise(function (resolve, reject) {
+    var u;
     try {
       u = new URL(String(url));
     } catch (_) {
@@ -40,20 +44,26 @@ function connect(url, o, hops) {
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return reject(fail('the address must start with http:// or https://', 'url'));
     if (u.protocol === 'http:' && !allowed(o.allowHttp)) return reject(fail('refusing a download over plain http', 'http'));
     if (o.refuseLocal && LOCAL.test(u.hostname)) return reject(fail('the address must not point at the TV itself', 'local'));
-    let data = null;
+    var data = null;
     if (o.body !== undefined && o.body !== null)
-      data = Buffer.isBuffer(o.body) ? o.body : Buffer.from(typeof o.body === 'string' ? o.body : JSON.stringify(o.body));
-    const method = o.method || (data ? 'POST' : 'GET');
-    const headers = Object.assign({}, o.headers || {});
+      data = Buffer.isBuffer(o.body) ? o.body : nc.bufFrom(typeof o.body === 'string' ? o.body : JSON.stringify(o.body));
+    var method = o.method || (data ? 'POST' : 'GET');
+    var headers = nc.assign({}, o.headers || {});
     if (data) {
-      if (!Object.keys(headers).some(k => k.toLowerCase() === 'content-type')) headers['content-type'] = 'application/json';
+      if (
+        !Object.keys(headers).some(function (k) {
+          return k.toLowerCase() === 'content-type';
+        })
+      )
+        headers['content-type'] = 'application/json';
       headers['content-length'] = data.length;
     }
-    const opts = { method, headers, timeout: o.idleMs || 20000 };
+    /** @type {any} */
+    var opts = { method: method, headers: headers, timeout: o.idleMs || 20000 };
     if (o.insecure) opts.rejectUnauthorized = false;
     diag.note('request', method + ' ' + u.protocol + '//' + u.host + u.pathname);
-    const req = nc.request(u.protocol === 'https:' ? https : http, u, opts, res => {
-      const st = res.statusCode;
+    var req = nc.request(u.protocol === 'https:' ? https : http, u, opts, function (res) {
+      var st = res.statusCode;
       if (st >= 300 && st < 400 && res.headers.location && method === 'GET' && o.redirects !== 0) {
         res.resume();
         if ((hops || 0) >= (o.redirects === undefined ? 5 : o.redirects)) return reject(fail('too many redirects', 'redirects'));
@@ -63,38 +73,49 @@ function connect(url, o, hops) {
         res.resume();
         return reject(fail(o.statusText ? o.statusText(st) : 'HTTP ' + st, 'status', st));
       }
-      resolve({ res, url: u.toString(), req });
+      resolve({ res: res, url: u.toString(), req: req });
     });
-    req.on('timeout', () => req.destroy(fail('timed out', 'timeout')));
+    req.on('timeout', function () {
+      nc.destroy(req, fail('timed out', 'timeout'));
+    });
     req.on('error', reject);
     req.end(data || undefined);
   });
 }
-const allowed = a => (typeof a === 'function' ? !!a() : a !== false);
 
 // the body as a stream that ends with an error when the connection drops, unpacked when it is gzip
 function bodyOf(res, o) {
-  return new Promise((resolve, reject) => {
-    const lost = () => fail('the connection was lost', 'lost');
-    const gunzip = () => {
-      const gz = res.pipe(zlib.createGunzip());
-      res.on('aborted', () => gz.destroy(lost()));
-      res.on('error', e => gz.destroy(e));
+  return new Promise(function (resolve, reject) {
+    function lost() {
+      return fail('the connection was lost', 'lost');
+    }
+    function gunzip() {
+      var gz = res.pipe(zlib.createGunzip());
+      res.on('aborted', function () {
+        nc.destroy(gz, lost());
+      });
+      res.on('error', function (e) {
+        nc.destroy(gz, e);
+      });
       return gz;
-    };
+    }
     if (String(res.headers['content-encoding'] || '').toLowerCase() === 'gzip') return resolve(gunzip());
-    res.on('aborted', () => res.emit('error', lost()));
+    res.on('aborted', function () {
+      res.emit('error', lost());
+    });
     if (o.unzip !== 'sniff') return resolve(res);
     // look at the first bytes: 1f 8b is gzip
-    const onErr = e => reject(e);
+    function onErr(e) {
+      reject(e);
+    }
     res.once('error', onErr);
     // an empty body ends before any data: hand on a stream that has already ended, so a reader sees its end
-    res.once('end', () => {
-      const empty = new (require('stream').PassThrough)();
+    res.once('end', function () {
+      var empty = new (require('stream').PassThrough)();
       empty.end();
       resolve(empty);
     });
-    res.once('data', first => {
+    res.once('data', function (first) {
       res.pause();
       res.unshift(first);
       res.removeListener('error', onErr);
@@ -106,14 +127,16 @@ function bodyOf(res, o) {
 // a time limit for the whole request, so nothing can hang on a TV
 function within(p, ms, message) {
   if (!ms) return p;
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(fail(message || 'timed out', 'timeout')), ms);
+  return new Promise(function (resolve, reject) {
+    var t = setTimeout(function () {
+      reject(fail(message || 'timed out', 'timeout'));
+    }, ms);
     p.then(
-      v => {
+      function (v) {
         clearTimeout(t);
         resolve(v);
       },
-      e => {
+      function (e) {
         clearTimeout(t);
         reject(e);
       }
@@ -122,79 +145,78 @@ function within(p, ms, message) {
 }
 
 function read(url, opts) {
-  const o = opts || {};
-  let conn = null;
-  const work = connect(url, o).then(
-    c =>
-      new Promise((resolve, reject) => {
-        conn = c;
-        bodyOf(c.res, o).then(s => {
-          const b = [];
-          let n = 0,
-            ended = false;
-          s.on('data', chunk => {
-            n += chunk.length;
-            if (o.maxBytes && n > o.maxBytes) {
-              reject(fail(o.bigText || 'the file is too large', 'big'));
-              s.destroy();
-              return c.req.destroy();
-            }
-            b.push(chunk);
-          });
-          s.on('end', () => {
-            ended = true;
-            resolve({ status: c.res.statusCode, headers: c.res.headers, body: Buffer.concat(b), url: c.url });
-          });
-          s.on('error', reject);
-          s.on('close', () => {
-            if (!ended) reject(fail('the connection was closed', 'lost'));
-          });
-        }, reject);
-      })
-  );
-  return within(work, o.totalMs, o.totalText).catch(e => {
-    if (conn) {
-      try {
-        conn.req.destroy();
-      } catch (_) {}
-    }
+  var o = opts || {};
+  /** @type {any} */
+  var conn = null;
+  var work = connect(url, o).then(function (c) {
+    return new Promise(function (resolve, reject) {
+      conn = c;
+      bodyOf(c.res, o).then(function (s) {
+        var b = [];
+        var n = 0,
+          ended = false;
+        s.on('data', function (chunk) {
+          n += chunk.length;
+          if (o.maxBytes && n > o.maxBytes) {
+            reject(fail(o.bigText || 'the file is too large', 'big'));
+            nc.destroy(s);
+            return nc.destroy(c.req);
+          }
+          b.push(chunk);
+        });
+        s.on('end', function () {
+          ended = true;
+          resolve({ status: c.res.statusCode, headers: c.res.headers, body: Buffer.concat(b), url: c.url });
+        });
+        s.on('error', reject);
+        s.on('close', function () {
+          if (!ended) reject(fail('the connection was closed', 'lost'));
+        });
+      }, reject);
+    });
+  });
+  return within(work, o.totalMs, o.totalText).then(null, function (e) {
+    if (conn) nc.destroy(conn.req);
     throw e;
   });
 }
 
 function open(url, opts) {
-  const o = opts || {};
-  return connect(url, o).then(c => bodyOf(c.res, o));
+  var o = opts || {};
+  return connect(url, o).then(function (c) {
+    return bodyOf(c.res, o);
+  });
 }
 
 function toFile(url, file, opts) {
-  const o = opts || {};
-  const work = connect(url, o).then(
-    c =>
-      new Promise((resolve, reject) => {
-        bodyOf(c.res, o).then(s => {
-          const h = crypto.createHash('sha256'),
-            w = fs.createWriteStream(file);
-          let n = 0;
-          s.on('data', chunk => {
-            n += chunk.length;
-            if (o.maxBytes && n > o.maxBytes) {
-              reject(fail(o.bigText || 'the file is too large', 'big'));
-              s.destroy();
-              c.req.destroy();
-            } else h.update(chunk);
-          });
-          s.on('error', e => {
-            w.destroy();
-            reject(e);
-          });
-          s.pipe(w);
-          w.on('finish', () => resolve({ sha256: h.digest('hex'), bytes: n }));
-          w.on('error', reject);
-        }, reject);
-      })
-  );
+  var o = opts || {};
+  var work = connect(url, o).then(function (c) {
+    return new Promise(function (resolve, reject) {
+      bodyOf(c.res, o).then(function (s) {
+        var h = crypto.createHash('sha256'),
+          w = fs.createWriteStream(file);
+        var n = 0;
+        s.on('data', function (chunk) {
+          n += chunk.length;
+          if (o.maxBytes && n > o.maxBytes) {
+            reject(fail(o.bigText || 'the file is too large', 'big'));
+            nc.destroy(s);
+            nc.destroy(c.req);
+          } else h.update(chunk);
+        });
+        s.on('error', function (e) {
+          nc.destroy(w);
+          reject(e);
+        });
+        s.pipe(w);
+        w.on('finish', function () {
+          resolve({ sha256: h.digest('hex'), bytes: n });
+        });
+        w.on('error', reject);
+      }, reject);
+    });
+  });
   return within(work, o.totalMs, o.totalText);
 }
 
-module.exports = { read, open, toFile, within, fail };
+module.exports = { read: read, open: open, toFile: toFile, within: within, fail: fail };

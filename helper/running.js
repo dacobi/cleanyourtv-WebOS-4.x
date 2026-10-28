@@ -5,61 +5,95 @@
 // Only apps the launcher knows are listed (the apps of listApps), never Home and never CleanYourTV's own apps (the manager, and the
 // picker and notify apps that are meant to stay up). Only listed apps can be closed. Closing also drops the app from LG's recents, as
 // LG's panel does.
-const web = require('./web');
+var web = require('./web');
 
-const HOME = 'com.webos.app.home',
+var HOME_RE = /^com\.webos\.app\.(?:full)?home$/,
   OWN = /^com\.cleanyourtv\./,
   AM = 'luna://com.webos.applicationManager/';
 
 // running: the list of applicationManager/running; apps: the launcher's apps ({id, title})
 function pick(running, apps) {
-  const title = {},
+  /** @type {Record<string, string>} */
+  var title = {},
+    /** @type {Record<string, boolean>} */
     seen = {},
+    /** @type {Array<{id: string, title: string}>} */
     out = [];
-  (apps || []).forEach(a => {
+  (apps || []).forEach(function (a) {
     title[a.id] = a.title || a.id;
   });
-  (running || []).forEach(r => {
-    const id = r && (r.id || r.appId);
-    if (!id || seen[id] || id === HOME || OWN.test(id) || !Object.prototype.hasOwnProperty.call(title, id)) return;
+  (running || []).forEach(function (r) {
+    var id = r && (r.id || r.appId);
+    if (!id || seen[id] || HOME_RE.test(id) || OWN.test(id) || !Object.prototype.hasOwnProperty.call(title, id)) return;
     seen[id] = true;
-    out.push({ id, title: title[id] });
+    out.push({ id: id, title: title[id] });
   });
   return out;
 }
 
 function create(ctx) {
-  const { luna } = ctx;
-  const apps = () => {
-    const a = ctx.feature('apps');
+  var luna = ctx.luna;
+  function apps() {
+    var a = ctx.feature('apps');
     return a ? a.apps() : Promise.resolve([]);
-  };
-  async function list() {
-    const r = await luna(AM + 'running', {});
-    if (!Array.isArray(r.running)) return { apps: [], error: r.errorText || 'the app manager did not answer' };
-    return { apps: pick(r.running, await apps()) };
+  }
+  function list() {
+    return luna(AM + 'running', {}).then(function (r) {
+      if (!Array.isArray(r.running)) return { apps: [], error: r.errorText || 'the app manager did not answer' };
+      return apps().then(function (known) {
+        return { apps: pick(r.running, known) };
+      });
+    });
   }
   // closeByAppId is the call that works on webOS 6, plain close the fallback (as for the picker in inputkey.js)
-  async function close(id) {
-    let r = await luna(AM + 'closeByAppId', { id });
-    if (r.returnValue !== true) r = await luna(AM + 'close', { id });
-    if (r.returnValue !== true) return false;
-    await luna('luna://com.webos.service.recent/removeRecent', { appId: id }); // not on every webOS; the app is closed either way
-    return true;
+  function close(id) {
+    return luna(AM + 'closeByAppId', { id: id })
+      .then(function (r) {
+        if (r.returnValue === true) return r;
+        return luna(AM + 'close', { id: id });
+      })
+      .then(function (r) {
+        if (r.returnValue !== true) return false;
+        return luna('luna://com.webos.service.recent/removeRecent', { appId: id }).then(function () {
+          return true; // not on every webOS; the app is closed either way
+        });
+      });
   }
-  async function handle(req, res, u, body) {
-    if (u === '/api/running') return web.json(res, await list());
+  function handle(req, res, u, body) {
+    if (u === '/api/running')
+      return list().then(function (r) {
+        return web.json(res, r);
+      });
     if (u === '/api/running/close' && req.method === 'POST') {
-      const b = await body(req);
-      const ids = (await list()).apps.map(a => a.id).filter(id => b.all === true || id === b.id);
-      if (!ids.length) return web.json(res, { returnValue: false, errorText: b.all ? 'nothing is running' : 'not a running app' });
-      const closed = [];
-      for (const id of ids) if (await close(id)) closed.push(id);
-      return web.json(res, { returnValue: closed.length === ids.length, closed });
+      return body(req).then(function (b) {
+        return list().then(function (cur) {
+          var ids = cur.apps
+            .map(function (a) {
+              return a.id;
+            })
+            .filter(function (id) {
+              return b.all === true || id === b.id;
+            });
+          if (!ids.length) return web.json(res, { returnValue: false, errorText: b.all ? 'nothing is running' : 'not a running app' });
+          /** @type {string[]} */
+          var closed = [];
+          var seq = Promise.resolve();
+          ids.forEach(function (id) {
+            seq = seq.then(function () {
+              return close(id).then(function (ok) {
+                if (ok) closed.push(id);
+              });
+            });
+          });
+          return seq.then(function () {
+            return web.json(res, { returnValue: closed.length === ids.length, closed: closed });
+          });
+        });
+      });
     }
     web.notFound(res);
   }
-  return { name: 'running', paths: ['/api/running', '/api/running/close'], handle, list, close };
+  return { name: 'running', paths: ['/api/running', '/api/running/close'], handle: handle, list: list, close: close };
 }
 
-module.exports = { create, pick };
+module.exports = { create: create, pick: pick };

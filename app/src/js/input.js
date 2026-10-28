@@ -168,9 +168,10 @@ function guarded() {
 }
 /* launching Home with {inputs:true} opens the Inputs list */
 function wantInputs() {
-  var p = {};
+  var p = {},
+    s = window.webOSSystem || window.PalmSystem || {};
   try {
-    p = JSON.parse(webOSSystem.launchParams || '{}');
+    p = JSON.parse(s.launchParams || '{}');
   } catch (e) {}
   if (p && p.inputs) {
     closeMenus();
@@ -183,9 +184,10 @@ function wantInputs() {
   }
 }
 document.addEventListener('webOSRelaunch', function () {
-  var p = {};
+  var p = {},
+    s = window.webOSSystem || window.PalmSystem || {};
   try {
-    p = JSON.parse(webOSSystem.launchParams || '{}');
+    p = JSON.parse(s.launchParams || '{}');
   } catch (e) {}
   logLine('launcher relaunch ' + JSON.stringify(p).slice(0, 120) + (LIVE.on ? ' (live on)' : ''));
   if (LIVE.on && p && p.guide && liveOn()) {

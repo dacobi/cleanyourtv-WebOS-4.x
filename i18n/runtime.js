@@ -5,7 +5,7 @@
    A text without a translation stays English. A translation can have plural forms, {"one": "%d foto", "other": "%d foto's"}: the
    form follows the first number in the text, by the language's plural rules (Unicode CLDR: zero, one, two, few, many, other). The
    English plural forms are in I18N.en. */
-var LANG_TV = String((window.webOSSystem && window.webOSSystem.locale) || navigator.language || 'en')
+var LANG_TV = String((window.webOSSystem || window.PalmSystem || {}).locale || navigator.language || 'en')
     .slice(0, 2)
     .toLowerCase(),
   LANG = 'en',

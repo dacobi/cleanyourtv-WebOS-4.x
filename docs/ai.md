@@ -49,8 +49,8 @@ required: **Share log** and an [issue](https://github.com/lasharor/cleanyourtv-W
 
 **Understand the code behind a symptom**
 
-> Using AGENTS.md ("Where things are") find the code responsible for *symptom* in this repository. Explain how it works on webOS 5/6 (Node 8.12)
-> and on webOS 25, and list what could make it fail on a TV that is not the maintainer's.
+> Using AGENTS.md ("Where things are") find the code responsible for *symptom* in this repository. Explain how it works on webOS 4 (Upstart,
+> Node 0.12.2, Chromium 53), webOS 5/6 (Node 8.12) and webOS 25, and list what could make it fail on a TV that is not the maintainer's.
 
 ## Part 2: fix the bug and send the fix
 
@@ -59,10 +59,10 @@ Codex, Cursor, Copilot agent mode and similar). The project's rules are in `AGEN
 
 1. **Fork and clone**, and make a branch: `git checkout -b fix-short-description`.
 2. **Reproduce the bug.** From the report, then from the code. Many bugs can be reproduced without a TV: the service runs under
-   `sh tools/check.sh` (the tests under Node 8.12.0, as on webOS 5 and 6, and the current Node), and the launcher page runs in Chrome against a stand-in service (see
+   `sh tools/check.sh` (the tests under Node 0.12.2, Node 8.12.0 and the current Node), and the launcher page runs in Chrome against a stand-in service (see
    `tools/theme-preview.mjs` for the idea).
 3. **Write a test that fails**, then fix the code until it passes. A test in `tools/test/` is expected whenever the bug can be
-   tested without a TV. Keep to the compatibility rules (Node 8.12 for the service, ES5 style for the pages).
+   tested without a TV. Keep to the compatibility rules (ES5 + `Promise` on Node 0.12.2 / 8.12 for the service, ES5 + Chromium 53+ fallbacks for the pages).
 4. **Run everything:** `sh tools/check.sh`, and `python3 ipk/build.py` to check that the package builds.
 5. **Try it on a TV** if you can: once your change is merged into `dev` it is in the dev build (the pre-release `dev`); in the manager
    app **Update channel** > **Dev builds** installs it, and **Update channel** > **Stable releases** goes back. A branch of your own

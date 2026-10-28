@@ -285,6 +285,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     console.log((okSv ? 'ok   ' : 'FAIL ') + 'api: /api/service lists every part as running: ' + JSON.stringify(sv));
     if (!okTv) failed++;
     if (!okSv) failed++;
+    // webOS 4 sends file://<appId> without -webos for installed apps (picker, manager, notify)
+    const pk = await request('POST', '/api/launch', { id: 'com.webos.app.hdmi1', params: {} }, 'file://com.cleanyourtv.picker');
+    const mg = await request('GET', '/api/manager/status', undefined, 'file://com.cleanyourtv.manager');
+    const bad = await request('POST', '/api/launch', { id: 'com.webos.app.hdmi1', params: {} }, 'file://com.other.app');
+    const okW4 = pk.status === 200 && pk.cors === '*' && mg.status === 200 && mg.cors === '*' && bad.status === 403;
+    console.log((okW4 ? 'ok   ' : 'FAIL ') + 'api: webOS 4 file://<appId> origin accepted for picker/manager and refused for other apps');
+    if (!okW4) failed++;
   }
   console.log(failed ? failed + ' API contract check(s) failed' : 'the API answers as recorded');
   finish(failed ? 1 : 0);

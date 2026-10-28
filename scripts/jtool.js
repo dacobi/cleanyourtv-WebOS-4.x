@@ -74,9 +74,9 @@ if (cmd === 'kind') {
   h.transparent = false;
   fs.writeFileSync(a[2], JSON.stringify(h, null, 1));
 } else if (cmd === 'exe') {
-  // exe <stock home appinfo.json>  ->  the program of a native Home app (its "main", absolute or in its folder)
+  // exe <stock home appinfo.json>  ->  the program of a native Home app (its "main", absolute, file:// or in its folder)
   var e = rj(a[1], {}),
-    m = String(e.main || ''),
+    m = String(e.main || '').replace(/^file:\/\//, ''),
     cand = [m.charAt(0) === '/' ? m : '/usr/palm/applications/' + (e.id || '') + '/' + m, '/usr/bin/' + (e.id || '')];
   for (var ci = 0; ci < cand.length; ci++) {
     if (e.id && fs.existsSync(cand[ci]) && fs.statSync(cand[ci]).isFile()) {
@@ -85,6 +85,27 @@ if (cmd === 'kind') {
     }
   }
   process.exit(1);
+} else if (cmd === 'homeid') {
+  // homeid <settings-json> <defaultSettings.json> <fullhome-appinfo.json>  ->  active Home app id (fullhome on webOS 4.x unless settings picked home)
+  var pick = '';
+  try {
+    var sj = JSON.parse(a[1] || '{}');
+    pick = (((sj || {}).settings || {}).defaultApps || {}).home || '';
+  } catch (e2) {}
+  if (!pick && a[2]) {
+    var dj = rj(a[2], null);
+    if (dj && dj.defaultApps && dj.defaultApps.home) pick = dj.defaultApps.home;
+    else {
+      try {
+        var raw = fs.readFileSync(a[2], 'utf8'),
+          dm = /"defaultApps"\s*:\s*\{[\s\S]*?"home"\s*:\s*"([^"]+)"/.exec(raw);
+        if (dm) pick = dm[1];
+      } catch (e3) {}
+    }
+  }
+  var fh = a[3] ? rj(a[3], null) : null;
+  if (fh && fh.type === 'native' && (!pick || pick === 'com.webos.app.fullhome')) console.log('com.webos.app.fullhome');
+  else console.log('com.webos.app.home');
 } else if (cmd === 'wamlaunch') {
   // wamlaunch <launcher appinfo.json> <folder> <out>  ->  the request that asks webapp-mgr to open the launcher (home-standin.sh),
   // and <out>.str with the app description as a string, the form older webapp-mgr versions may expect
@@ -111,6 +132,6 @@ if (cmd === 'kind') {
     fs.writeFileSync(p, JSON.stringify(b));
   }
 } else {
-  console.error('usage: jtool.js kind|newer|options|opt|stage|exe|wamlaunch|wintype|rmbind');
+  console.error('usage: jtool.js kind|newer|options|opt|stage|exe|homeid|wamlaunch|wintype|rmbind');
   process.exit(2);
 }

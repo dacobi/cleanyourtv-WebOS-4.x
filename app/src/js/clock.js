@@ -1,5 +1,5 @@
 /* ---------- the clock and dates follow the language (the TV's, or the manager's Language setting; text: i18n/runtime.js) ---------- */
-var LOC_TV = (window.webOSSystem && webOSSystem.locale) || navigator.language || 'en-GB',
+var LOC_TV = (window.webOSSystem || window.PalmSystem || {}).locale || navigator.language || 'en-GB',
   LOC = LOC_TV;
 /* the Language setting from the service's settings: '' follows the TV */
 function useLang(code) {
@@ -25,8 +25,10 @@ function clockOpts() {
   var c = cfg.clock,
     o = { hour: 'numeric', minute: '2-digit' };
   if (c === '24') {
+    o.hour12 = false;
     o.hourCycle = 'h23';
   } else if (c === '12') {
+    o.hour12 = true;
     o.hourCycle = 'h12';
     o.hour = 'numeric';
   }

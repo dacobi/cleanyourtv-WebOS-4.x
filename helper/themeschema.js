@@ -1,23 +1,26 @@
 // The theme schema: every setting a theme can make (SCHEMA), how a value is checked and clamped (normalize), and how a theme turns into
 // what the launcher applies (resolve: CSS variables, a few attributes and numbers). No files are fetched here; theme.js does that.
 // docs/themes.md is generated from SCHEMA (tools/theme-docs.js).
-const fs = require('fs'),
-  path = require('path');
+var fs = require('fs'),
+  path = require('path'),
+  nc = require('./netcompat');
 
 // where downloaded themes are kept: themes/<id>/ next to this file (D/themes on the TV)
-const dir = () => process.env.CYTV_THEMES || path.join(__dirname, 'themes');
-const DEFAULT_ID = 'classic',
+function dir() {
+  return process.env.CYTV_THEMES || path.join(__dirname, 'themes');
+}
+var DEFAULT_ID = 'classic',
   MAX_WALLPAPER = 1.5 * 1024 * 1024,
   MAX_FONT = 400 * 1024,
   MAX_PREVIEW = 600 * 1024,
   MAX_THEME = 32 * 1024,
   MAX_INDEX = 128 * 1024;
-const HEX = /^#[0-9a-f]{6}$/i,
+var HEX = /^#[0-9a-f]{6}$/i,
   FILE = /^[\w-]{1,40}\.(?:jpg|png|webp)$/,
   FONT_FILE = /^[\w-]{1,40}\.(?:woff2|woff|ttf|otf)$/,
   ID = /^[a-z0-9-]{1,30}$/,
   PREVIEW_PATH = /^([a-z0-9-]{1,30})\/preview\.(?:jpg|png|webp)$/;
-const ACCENTS = [
+var ACCENTS = [
   ['Theme default', ''],
   ['White', '#f5f6f8'],
   ['Blue', '#4c8dff'],
@@ -29,13 +32,13 @@ const ACCENTS = [
   ['Pink', '#ff6fb5'],
   ['Purple', '#a77bff'],
 ];
-const POS = ['left', 'center', 'right'],
+var POS = ['left', 'center', 'right'],
   TOPBOT = ['top', 'bottom'];
 
 // [key, type, range or choices, default, what it does]. Types: color (#rrggbb), color? (a colour, or null for "the accent"), num, int
 // (range [lo, hi]), enum (choices), bool, auto (an int range, or null for "worked out from the other values"), file (a wallpaper or font
 // file name, checked apart from the rest).
-const SCHEMA = [
+var SCHEMA = [
   ['colors.night', 'color', null, '#07080b', 'Page background.'],
   ['colors.panel', 'color', null, '#14161b', 'Toast background; menu rows are a lighter mix of it.'],
   ['colors.ink', 'color', null, '#f5f6f8', 'Text.'],
@@ -176,29 +179,53 @@ const SCHEMA = [
   ],
   ['effects.wallpaperDim', 'num', [0, 0.9], 0.4, 'How far the wallpaper is darkened with the background colour.'],
 ];
-const DEFAULTS = {};
-for (const r of SCHEMA) DEFAULTS[r[0]] = r[3];
+/** @type {Record<string, any>} */
+var DEFAULTS = {};
+for (var si = 0; si < SCHEMA.length; si++) DEFAULTS[/** @type {string} */ (SCHEMA[si][0])] = SCHEMA[si][3];
 
-const hex = v => (typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : undefined);
-const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
-const toHex = c => '#' + c.map(x => ('0' + Math.round(Math.min(255, Math.max(0, x))).toString(16)).slice(-2)).join('');
-const mix = (a, b, t) => {
-  const x = rgb(a),
+function hex(v) {
+  return typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : undefined;
+}
+function rgb(h) {
+  return [1, 3, 5].map(function (i) {
+    return parseInt(h.slice(i, i + 2), 16);
+  });
+}
+function toHex(c) {
+  return (
+    '#' +
+    c
+      .map(function (x) {
+        return ('0' + Math.round(Math.min(255, Math.max(0, x))).toString(16)).slice(-2);
+      })
+      .join('')
+  );
+}
+function mix(a, b, t) {
+  var x = rgb(a),
     y = rgb(b);
-  return toHex(x.map((v, i) => v + (y[i] - v) * t));
-};
-const lum = h => {
-  const c = rgb(h).map(v => {
+  return toHex(
+    x.map(function (v, i) {
+      return v + (y[i] - v) * t;
+    })
+  );
+}
+function lum(h) {
+  var c = rgb(h).map(function (v) {
     v /= 255;
     return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
   });
   return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-};
-const getPath = (o, p) => p.split('.').reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o);
+}
+function getPath(o, p) {
+  return p.split('.').reduce(function (x, k) {
+    return x && typeof x === 'object' ? x[k] : undefined;
+  }, o);
+}
 // the checked value for a row, or undefined when the raw value is missing or invalid
 function check(row, v) {
-  const type = row[1],
-    spec = row[2];
+  var type = row[1],
+    spec = /** @type {any} */ (row[2]);
   if (v === undefined) return undefined;
   if (type === 'color') return hex(v);
   if (type === 'color?') return v === '' || v === null ? null : hex(v);
@@ -207,7 +234,7 @@ function check(row, v) {
   if (type === 'num' || type === 'int' || type === 'auto') {
     if (type === 'auto' && (v === null || v === '')) return null;
     if (typeof v !== 'number' || !isFinite(v)) return undefined;
-    const c = Math.min(spec[1], Math.max(spec[0], v));
+    var c = Math.min(spec[1], Math.max(spec[0], v));
     return type === 'num' ? c : Math.round(c);
   }
   return undefined;
@@ -224,43 +251,49 @@ function imageOk(b, name, max) {
 // is this buffer a font of a kind its file name says (WOFF2, WOFF, TrueType or OpenType)?
 function fontOk(b, name) {
   if (!b || b.length < 12 || b.length > MAX_FONT) return false;
-  const m = b.slice(0, 4).toString('latin1');
+  var m = b.slice(0, 4).toString('binary');
   return (
     (/\.woff2$/.test(name) && m === 'wOF2') ||
     (/\.woff$/.test(name) && m === 'wOFF') ||
     (/\.(?:ttf|otf)$/.test(name) && (m === '\u0000\u0001\u0000\u0000' || m === 'true' || m === 'OTTO'))
   );
 }
-const fontType = n => (/\.woff2$/.test(n) ? 'font/woff2' : /\.woff$/.test(n) ? 'font/woff' : /\.otf$/.test(n) ? 'font/otf' : 'font/ttf');
-const imageType = n => (/\.jpg$/.test(n) ? 'image/jpeg' : /\.png$/.test(n) ? 'image/png' : 'image/webp');
-const sniff = b =>
-  b.length > 12 && b[0] === 0xff && b[1] === 0xd8
+function fontType(n) {
+  return /\.woff2$/.test(n) ? 'font/woff2' : /\.woff$/.test(n) ? 'font/woff' : /\.otf$/.test(n) ? 'font/otf' : 'font/ttf';
+}
+function imageType(n) {
+  return /\.jpg$/.test(n) ? 'image/jpeg' : /\.png$/.test(n) ? 'image/png' : 'image/webp';
+}
+function sniff(b) {
+  return b.length > 12 && b[0] === 0xff && b[1] === 0xd8
     ? 'jpg'
     : b.length > 12 && b.slice(1, 4).toString() === 'PNG'
       ? 'png'
       : b.length > 12 && b.slice(0, 4).toString() === 'RIFF' && b.slice(8, 12).toString() === 'WEBP'
         ? 'webp'
         : '';
+}
 
 // A theme: its description and a flat map of every SCHEMA key; `base` is the values of the theme it extends (or the defaults). A wallpaper
 // is accepted when the file is in `wallDir` (default: the theme's folder on the TV) and is an image of the right type.
 function normalize(raw, id, base, wallDir) {
   if (!raw || typeof raw !== 'object' || !ID.test(id)) return null;
-  const v = Object.assign({}, base || DEFAULTS);
-  for (const row of SCHEMA) {
+  var v = nc.assign({}, base || DEFAULTS);
+  for (var i = 0; i < SCHEMA.length; i++) {
+    var row = SCHEMA[i];
     if (row[1] === 'file') continue;
-    const c = check(row, getPath(raw, row[0]));
+    var c = check(row, getPath(raw, /** @type {string} */ (row[0])));
     if (c !== undefined) v[/** @type {string} */ (row[0])] = c;
   }
-  const w = getPath(raw, 'effects.wallpaper');
+  var w = getPath(raw, 'effects.wallpaper');
   if (typeof w === 'string' && FILE.test(w)) {
     try {
-      const b = fs.readFileSync(path.join(wallDir || path.join(dir(), id), w));
+      var b = fs.readFileSync(path.join(wallDir || path.join(dir(), id), w));
       if (imageOk(b, w, MAX_WALLPAPER)) v['effects.wallpaper'] = w;
     } catch (_) {}
   } else if (w === '') v['effects.wallpaper'] = '';
   // a typeface: kept with the id of the theme whose folder holds it, so a theme that extends this one uses the same file
-  const f = getPath(raw, 'type.fontFile');
+  var f = getPath(raw, 'type.fontFile');
   if (typeof f === 'string' && FONT_FILE.test(f)) {
     try {
       if (fontOk(fs.readFileSync(path.join(wallDir || path.join(dir(), id), f)), f)) {
@@ -272,11 +305,11 @@ function normalize(raw, id, base, wallDir) {
   // slots for cards: a list in the theme (not in SCHEMA, which holds single values); a theme without "slots" keeps its base's
   if (raw.slots !== undefined) v.slots = slots(raw.slots);
   return {
-    id,
+    id: id,
     name: String(raw.name || id).slice(0, 40),
     author: String(raw.author || '').slice(0, 60),
     description: String(raw.description || '').slice(0, 160),
-    v,
+    v: v,
   };
 }
 
@@ -285,15 +318,27 @@ function normalize(raw, id, base, wallDir) {
 // id names the place (greeting, clock-side, side, row are the usual ones, so a card stays when the theme changes); x and y place the
 // slot's box like the clock's (x is not used when centred), w and h are its size; card is the card type it shows until the user picks
 // another; grid: keep leaves it on screen while the app grid is open (default: hidden then). Values are clamped like SCHEMA's.
-const SLOT_ID = /^[a-z][a-z0-9-]{0,19}$/,
+var SLOT_ID = /^[a-z][a-z0-9-]{0,19}$/,
   MAX_SLOTS = 8;
 function slots(list) {
   if (!Array.isArray(list)) return [];
-  const num = (n, lo, hi, d) => (typeof n === 'number' && isFinite(n) ? Math.round(Math.min(hi, Math.max(lo, n))) : d);
-  const out = [];
-  for (const o of list) {
+  function num(n, lo, hi, d) {
+    return typeof n === 'number' && isFinite(n) ? Math.round(Math.min(hi, Math.max(lo, n))) : d;
+  }
+  /** @type {any[]} */
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var o = list[i];
     if (out.length >= MAX_SLOTS) break;
-    if (!o || typeof o !== 'object' || !SLOT_ID.test(o.id) || out.some(x => x.id === o.id)) continue;
+    if (
+      !o ||
+      typeof o !== 'object' ||
+      !SLOT_ID.test(o.id) ||
+      out.some(function (x) {
+        return x.id === o.id;
+      })
+    )
+      continue;
     out.push({
       id: o.id,
       anchor: TOPBOT.indexOf(o.anchor) >= 0 ? o.anchor : 'top',
@@ -310,10 +355,12 @@ function slots(list) {
 }
 
 // What the launcher applies: CSS variables, attributes for the few layouts that need more than a variable, and the numbers its scrolling needs.
-const px = n => n + 'px';
+function px(n) {
+  return n + 'px';
+}
 function place(anchor, align, x, y) {
   // the four edges and the transform of a box anchored to a side, a corner or the centre
-  const o = { l: 'auto', r: 'auto', t: 'auto', b: 'auto', tx: 'none' };
+  var o = { l: 'auto', r: 'auto', t: 'auto', b: 'auto', tx: 'none' };
   if (align === 'left') o.l = px(x);
   else if (align === 'right') o.r = px(x);
   else {
@@ -326,35 +373,38 @@ function place(anchor, align, x, y) {
   return o;
 }
 function resolve(t, accent) {
-  const v = t.v,
+  var v = t.v,
     A = hex(accent) || v['colors.accent'],
     night = rgb(v['colors.night']),
     ink = rgb(v['colors.ink']),
     pill = rgb(v['colors.pill']);
-  const dockBottom = v['dock.anchor'] === 'bottom',
+  var dockBottom = v['dock.anchor'] === 'bottom',
     mode = v['grid.mode'] === 'overlay' ? 'overlay' : v['grid.mode'] === 'push' || dockBottom ? 'push' : 'below',
     overlay = mode === 'overlay',
     push = mode === 'push';
-  const panel = v['dock.panel'] > 0,
+  var panel = v['dock.panel'] > 0,
     pad = panel ? v['dock.panelPad'] : 0,
     dockH = v['dock.h'] + 2 * pad;
-  const dockY = v['dock.y'] !== null ? v['dock.y'] : dockBottom ? 68 : 360;
-  const dockTop = dockBottom ? 1080 - dockY - dockH : dockY; // where the dock's top is when the grid has no focus
-  const viewTop = overlay ? 0 : Math.min(v['grid.clipTop'], push ? Math.min(dockTop, v['grid.dockUp']) : dockY);
-  const gridY = v['grid.y'] !== null ? v['grid.y'] : overlay ? 290 : dockTop + dockH + 60;
-  const dock =
+  var dockY = v['dock.y'] !== null ? v['dock.y'] : dockBottom ? 68 : 360;
+  var dockTop = dockBottom ? 1080 - dockY - dockH : dockY; // where the dock's top is when the grid has no focus
+  var viewTop = overlay ? 0 : Math.min(v['grid.clipTop'], push ? Math.min(dockTop, v['grid.dockUp']) : dockY);
+  var gridY = v['grid.y'] !== null ? v['grid.y'] : overlay ? 290 : dockTop + dockH + 60;
+  var dock =
     dockBottom && overlay
       ? place('bottom', v['dock.align'], v['dock.x'], dockY)
       : place('top', v['dock.align'], v['dock.x'], dockTop - viewTop);
-  const clock = place(v['clock.anchor'], v['clock.align'], v['clock.x'], v['clock.y']),
+  var clock = place(v['clock.anchor'], v['clock.align'], v['clock.x'], v['clock.y']),
     bar = place(v['bar.anchor'], v['bar.align'], v['bar.x'], v['bar.y']);
-  const labels = v['bar.labels'] === 'auto' ? (v['bar.style'] === 'round' ? 'hide' : 'show') : v['bar.labels'];
-  const FONT = {
+  var labels = v['bar.labels'] === 'auto' ? (v['bar.style'] === 'round' ? 'hide' : 'show') : v['bar.labels'];
+  /** @type {Record<string, string>} */
+  var FONT = {
     default: '"LG Smart UI","Helvetica Neue",Helvetica,Arial,sans-serif',
     serif: 'Georgia,"Times New Roman",Times,serif',
     mono: 'Menlo,Consolas,"DejaVu Sans Mono",monospace',
   };
-  const vars = {
+  /** @type {Record<string, string>} */
+  var ALIGN_ITEMS = { left: 'flex-start', center: 'center', right: 'flex-end' };
+  var vars = {
     '--night': v['colors.night'],
     '--night-rgb': night.join(','),
     '--panel': v['colors.panel'],
@@ -378,7 +428,7 @@ function resolve(t, accent) {
     '--clock-t': clock.t,
     '--clock-b': clock.b,
     '--clock-tx': clock.tx,
-    '--clock-ai': { left: 'flex-start', center: 'center', right: 'flex-end' }[v['clock.align']],
+    '--clock-ai': ALIGN_ITEMS[v['clock.align']],
     '--clock-s': String(v['clock.scale']),
     '--date-s': String(v['clock.dateScale']),
     '--clock-d': v['clock.show'] ? 'flex' : 'none',
@@ -430,19 +480,20 @@ function resolve(t, accent) {
     '--glow-op': String(v['effects.glow']),
     '--spd': String(v['effects.speed']),
   };
-  const w = v['effects.wallpaper'];
-  const out = {
+  var w = v['effects.wallpaper'];
+  /** @type {Record<string, any>} */
+  var out = {
     id: t.id,
     name: t.name,
-    vars,
-    attrs: { bar: v['bar.style'], labels, clock: v['clock.layout'], grid: mode, galign: v['grid.align'] },
+    vars: vars,
+    attrs: { bar: v['bar.style'], labels: labels, clock: v['clock.layout'], grid: mode, galign: v['grid.align'] },
     cols: v['grid.cols'],
     tileH: v['grid.tileH'],
     gapY: v['grid.gapY'],
     gt: gridY - viewTop,
     viewH: 1080 - viewTop,
     dockN: v['dock.count'],
-    overlay,
+    overlay: overlay,
     push: push ? { up: Math.max(0, dockTop - v['grid.dockUp']), gridTop: gridY } : null,
     overlayH: v['grid.overlayH'],
     glowRgb: v['effects.glowColor'] === 'accent' ? rgb(A).join(',') : '',
@@ -451,8 +502,8 @@ function resolve(t, accent) {
   };
   // only a theme with slots has this key (the same reason)
   if (v.slots && v.slots.length)
-    out.slots = v.slots.map(sl => {
-      const o = place(sl.anchor, sl.align, sl.x, sl.y);
+    out.slots = v.slots.map(function (sl) {
+      var o = place(sl.anchor, sl.align, sl.x, sl.y);
       return {
         id: sl.id,
         align: sl.align,
@@ -470,45 +521,46 @@ function resolve(t, accent) {
   // only a theme with a typeface has this key, so the replies for the other themes stay as they were
   // only a theme that lines the name up with the dock carries this; the dock's own width at a given app count is worked out on the page
   // (the number of apps shown, not dock.count), so the name tracks the dock's left edge however many apps are present
-  if (v['shelf.dockAlign']) out.shelf = { dock: true, align: v['dock.align'], x: v['dock.x'], w: v['dock.w'], gap: v['dock.gap'], pad };
+  if (v['shelf.dockAlign'])
+    out.shelf = { dock: true, align: v['dock.align'], x: v['dock.x'], w: v['dock.w'], gap: v['dock.gap'], pad: pad };
   if (v['type.fontFile']) out.font = { id: v.fontTheme || t.id, file: v['type.fontFile'] };
   return out;
 }
 
 module.exports = {
-  ACCENTS,
-  DEFAULTS,
-  DEFAULT_ID,
-  FILE,
-  FONT_FILE,
-  HEX,
-  ID,
-  MAX_FONT,
-  MAX_INDEX,
-  MAX_PREVIEW,
-  MAX_THEME,
-  MAX_WALLPAPER,
-  POS,
-  PREVIEW_PATH,
-  SCHEMA,
-  SLOT_ID,
-  TOPBOT,
-  check,
-  dir,
-  fontOk,
-  fontType,
-  getPath,
-  hex,
-  imageOk,
-  imageType,
-  lum,
-  mix,
-  normalize,
-  place,
-  px,
-  resolve,
-  rgb,
-  slots,
-  sniff,
-  toHex,
+  ACCENTS: ACCENTS,
+  DEFAULTS: DEFAULTS,
+  DEFAULT_ID: DEFAULT_ID,
+  FILE: FILE,
+  FONT_FILE: FONT_FILE,
+  HEX: HEX,
+  ID: ID,
+  MAX_FONT: MAX_FONT,
+  MAX_INDEX: MAX_INDEX,
+  MAX_PREVIEW: MAX_PREVIEW,
+  MAX_THEME: MAX_THEME,
+  MAX_WALLPAPER: MAX_WALLPAPER,
+  POS: POS,
+  PREVIEW_PATH: PREVIEW_PATH,
+  SCHEMA: SCHEMA,
+  SLOT_ID: SLOT_ID,
+  TOPBOT: TOPBOT,
+  check: check,
+  dir: dir,
+  fontOk: fontOk,
+  fontType: fontType,
+  getPath: getPath,
+  hex: hex,
+  imageOk: imageOk,
+  imageType: imageType,
+  lum: lum,
+  mix: mix,
+  normalize: normalize,
+  place: place,
+  px: px,
+  resolve: resolve,
+  rgb: rgb,
+  slots: slots,
+  sniff: sniff,
+  toHex: toHex,
 };

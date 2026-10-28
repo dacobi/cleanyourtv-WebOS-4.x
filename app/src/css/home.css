@@ -105,7 +105,7 @@ body {
   width: 1920px;
   height: 720px;
   opacity: 0;
-  transition: opacity calc(0.35s * var(--spd)) linear;
+  transition: opacity 0.35s linear;
   will-change: opacity;
   background: radial-gradient(ellipse 1400px 640px at 26% -6%, rgba(var(--c), 0.45), transparent 70%);
 }
@@ -194,7 +194,7 @@ body {
   font-weight: 500;
   background: var(--pill-bg);
   box-shadow: inset 0 0 0 1px var(--pill-ring);
-  transition: transform calc(0.12s * var(--spd)) cubic-bezier(0.3, 1.35, 0.5, 1);
+  transition: transform 0.12s cubic-bezier(0.3, 1.35, 0.5, 1);
   will-change: transform;
 }
 .pill > * + * {
@@ -266,7 +266,7 @@ body {
   top: 0;
   width: 1920px;
   height: calc(1080px - var(--view-top));
-  transition: transform calc(0.3s * var(--spd)) ease-out;
+  transition: transform 0.3s ease-out;
   will-change: transform;
 }
 #dock {
@@ -281,26 +281,32 @@ body {
   padding: var(--dock-pad);
   border-radius: calc(var(--dock-rad) + var(--dock-pad));
   background: rgba(255, 255, 255, var(--dock-panel));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, calc(var(--dock-panel) * 1.4));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, var(--dock-panel));
+}
+@supports (color: rgba(0, 0, 0, calc(0.5 * 1))) {
+  #dock {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, calc(var(--dock-panel) * 1.4));
+  }
 }
 #dock > * + * {
   margin-left: var(--dock-gap);
 }
+/* Flexbox wrap with half-gap margins works on Chromium 53 (webOS 4) and centred grids; CSS Grid enhances left-aligned grids on Chromium 68+ */
 #grid {
   position: absolute;
   left: var(--grid-l);
   top: var(--grid-t);
-  width: var(--grid-w);
-  display: grid;
-  grid-template-columns: repeat(var(--cols), 1fr);
-  gap: var(--gap-y) var(--gap-x);
+  width: calc(var(--grid-w) + var(--gap-x));
+  margin: calc(-0.5 * var(--gap-y)) calc(-0.5 * var(--gap-x));
+  display: flex;
+  flex-wrap: wrap;
 }
 /* an overlay grid: hidden until the focus moves down into it, then dark layer + grid over the screen above the dock */
 [data-grid="overlay"] #grid {
   z-index: 3;
   opacity: 0;
   pointer-events: none;
-  transition: opacity calc(0.22s * var(--spd)) linear;
+  transition: opacity 0.22s linear;
 }
 [data-grid="overlay"].grid-open #grid {
   opacity: 1;
@@ -318,7 +324,7 @@ body {
   opacity: 0;
   pointer-events: none;
   background: rgba(var(--night-rgb), var(--ov-dim));
-  transition: opacity calc(0.22s * var(--spd)) linear;
+  transition: opacity 0.22s linear;
 }
 [data-grid="overlay"].grid-open #scroll::before,
 [data-grid="push"].grid-open #scroll::before {
@@ -329,7 +335,7 @@ body {
   z-index: 3;
   opacity: 0;
   pointer-events: none;
-  transition: opacity calc(0.25s * var(--spd)) linear;
+  transition: opacity 0.25s linear;
 }
 [data-grid="push"].grid-open #grid {
   opacity: 1;
@@ -337,19 +343,14 @@ body {
 }
 /* the app name stays with the dock's resting place; with the grid open it would sit among the tiles */
 [data-grid="push"] #shelf {
-  transition: opacity calc(0.25s * var(--spd)) linear;
+  transition: opacity 0.25s linear;
 }
 [data-grid="push"].grid-open #shelf {
   opacity: 0;
 }
 /* every row of tiles centred, also a last row that is not full */
 [data-galign="center"] #grid {
-  display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-}
-[data-galign="center"] #grid .tile {
-  width: var(--tile-w);
 }
 .tile::after {
   content: "";
@@ -374,7 +375,7 @@ body {
   will-change: transform;
   background: rgb(var(--b));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, var(--tile-border));
-  transition: transform calc(0.12s * var(--spd)) cubic-bezier(0.3, 1.35, 0.5, 1);
+  transition: transform 0.12s cubic-bezier(0.3, 1.35, 0.5, 1);
 }
 .snap .tile,
 .snap .pill {
@@ -388,7 +389,7 @@ body {
 }
 .tile.press {
   transform: scale(0.96) !important;
-  transition-duration: calc(0.06s * var(--spd));
+  transition-duration: 0.06s;
 }
 .tile.launching {
   opacity: 0.82;
@@ -473,8 +474,24 @@ body {
   transform: translateY(var(--dock-lift)) scale(var(--dock-fs));
 }
 #grid .tile {
+  width: var(--tile-w);
   height: var(--tile-h);
+  margin: calc(0.5 * var(--gap-y)) calc(0.5 * var(--gap-x));
   border-radius: var(--tile-r);
+}
+@supports (display: grid) {
+  body:not([data-galign="center"]) #grid {
+    width: var(--grid-w);
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--cols), 1fr);
+    grid-gap: var(--gap-y) var(--gap-x);
+    gap: var(--gap-y) var(--gap-x);
+  }
+  body:not([data-galign="center"]) #grid .tile {
+    width: auto;
+    margin: 0;
+  }
 }
 #grid .tile img {
   width: 64%;
@@ -592,7 +609,7 @@ body {
 .wp {
   background-size: cover;
   background-position: center;
-  transition: opacity calc(1.2s * var(--spd)) linear;
+  transition: opacity 1.2s linear;
 }
 .wp.on,
 .wpon .wpd {
@@ -619,7 +636,7 @@ body.wpon {
   bottom: var(--cb);
   transform: var(--ctx);
   overflow: hidden;
-  transition: opacity calc(0.25s * var(--spd)) linear;
+  transition: opacity 0.25s linear;
 }
 /* text follows the side the slot is on (start and end, so it is mirrored in a right-to-left language) */
 .card[data-align="left"] {
@@ -757,8 +774,8 @@ body.wpon {
   display: flex;
   align-items: center;
   transition:
-    transform calc(0.15s * var(--spd)) ease-out,
-    background-color calc(0.15s * var(--spd)) linear;
+    transform 0.15s ease-out,
+    background-color 0.15s linear;
 }
 .card-ha-entity.on .ha-i {
   color: var(--acc);
@@ -848,4 +865,47 @@ body.wpon {
 .cards-idle .card {
   opacity: 0.45;
   transition: opacity 2s linear;
+}
+/* theme speed scaling (--spd) for engines that accept <time> inside calc() (Chromium 68+); Chromium 53 keeps the 1x durations above */
+@supports (transition-duration: calc(1s * 1)) {
+  .glow {
+    transition: opacity calc(0.35s * var(--spd)) linear;
+  }
+  .pill {
+    transition: transform calc(0.12s * var(--spd)) cubic-bezier(0.3, 1.35, 0.5, 1);
+  }
+  #scroll {
+    transition: transform calc(0.3s * var(--spd)) ease-out;
+  }
+  [data-grid="overlay"] #grid,
+  [data-grid="overlay"] #scroll::before,
+  [data-grid="push"] #scroll::before {
+    transition: opacity calc(0.22s * var(--spd)) linear;
+  }
+  [data-grid="push"] #grid,
+  [data-grid="push"] #shelf,
+  .card {
+    transition: opacity calc(0.25s * var(--spd)) linear;
+  }
+  .tile {
+    transition: transform calc(0.12s * var(--spd)) cubic-bezier(0.3, 1.35, 0.5, 1);
+  }
+  .snap .tile,
+  .snap .pill {
+    transition: none;
+  }
+  .tile.press {
+    transition-duration: calc(0.06s * var(--spd));
+  }
+  .wp {
+    transition: opacity calc(1.2s * var(--spd)) linear;
+  }
+  .card-ha-entity {
+    transition:
+      transform calc(0.15s * var(--spd)) ease-out,
+      background-color calc(0.15s * var(--spd)) linear;
+  }
+  .cards-idle .card {
+    transition: opacity 2s linear;
+  }
 }

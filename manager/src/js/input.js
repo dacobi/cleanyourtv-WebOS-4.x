@@ -41,9 +41,10 @@ document.addEventListener('wheel', function (e) {
 /* opened with {"open":"wallpapers"} or {"open":"cards"} (the launcher's Customise menu): straight to that screen */
 var cardsFromHome = false;
 function wantView() {
-  var p = {};
+  var p = {},
+    s = window.webOSSystem || window.PalmSystem || {};
   try {
-    p = JSON.parse(window.webOSSystem.launchParams || '{}');
+    p = JSON.parse(s.launchParams || '{}');
   } catch (e) {}
   if (p && p.open === 'wallpapers') openWallpapers();
   if (p && p.open === 'cards') {

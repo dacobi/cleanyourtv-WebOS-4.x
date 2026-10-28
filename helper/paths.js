@@ -1,14 +1,15 @@
 // Every place on the TV the service reads or writes. The environment variables point them elsewhere for the tests on a computer
 // (tools/test); on the TV none of them is set.
-const path = require('path');
-const env = process.env;
+var path = require('path');
+var nc = require('./netcompat');
+var env = process.env;
 
-const D = env.CYTV_DIR || '/media/developer/cleanyourtv';
-const SERVICE_DIR = env.CYTV_SERVICE_DIR || '/media/developer/apps/usr/palm/services/com.cleanyourtv.manager.service';
+var D = env.CYTV_DIR || '/media/developer/cleanyourtv';
+var SERVICE_DIR = env.CYTV_SERVICE_DIR || '/media/developer/apps/usr/palm/services/com.cleanyourtv.manager.service';
 
 module.exports = {
-  D, // the service's own folder: helper files, config.json, the launcher (app/), Live TV data, themes
-  SERVICE_DIR, // the installed package (the manager app's service folder)
+  D: D, // the service's own folder: helper files, config.json, the launcher (app/), Live TV data, themes
+  SERVICE_DIR: SERVICE_DIR, // the installed package (the manager app's service folder)
   CONF: D + '/config.json',
   USAGE: D + '/usage.json',
   TV: D + '/tv.json', // what tvprofile.js found out about this TV
@@ -33,7 +34,9 @@ module.exports = {
   PROC: env.CYTV_PROC || '/proc',
   HOME_APP: '/usr/palm/applications/com.webos.app.home',
   FULLHOME_APP: '/usr/palm/applications/com.webos.app.fullhome',
-  STANDIN: env.CYTV_STANDIN || '/tmp/cleanyourtv-home-standin', // LG's Home program while scripts/home-standin.sh is mounted over it
+  HOME_ID_FILE: env.CYTV_HOME_ID || '/tmp/cleanyourtv-home-id',
+  HOME_PARAMS: env.CYTV_HOME_PARAMS || '/tmp/cleanyourtv-home-params',
+  STANDIN: env.CYTV_STANDIN || '/tmp/cleanyourtv-home-standin', // LG's Home program(s) while scripts/home-standin.sh is mounted over them
   // child processes find the system tools first, as in a login shell on the TV
-  ENV: Object.assign({}, env, { PATH: '/usr/bin:/usr/sbin:/bin:/sbin:' + (env.PATH || '') }),
+  ENV: nc.assign({}, env, { PATH: '/usr/bin:/usr/sbin:/bin:/sbin:' + (env.PATH || '') }),
 };

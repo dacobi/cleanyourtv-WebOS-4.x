@@ -1,6 +1,6 @@
 // Runs the launcher, the manager and the Inputs picker in the browser engines of older TVs: Chromium 68 (webOS 5) and Chromium 79
-// (webOS 6), headless, against a stand-in for the TV's service on 127.0.0.1:8765. It fails when a page throws a script error or does
-// not draw what it should (tiles, rows, inputs). A current Chrome hides such problems: these versions lack features it has.
+// (webOS 6), headless, plus a Chromium-53-fallback pass (@supports and max() stripped for webOS 4), against a stand-in for the TV's
+// service on 127.0.0.1:8765. It fails when a page throws a script error, fails to draw its items, or breaks multi-column layout.
 //   node tools/oldchrome.js                 both engines
 //   node tools/oldchrome.js --shots <dir>   also saves a screenshot of each page per engine
 // The engines are Chromium snapshots from Google's storage, downloaded once (about 100 MB each), checked against pinned SHA-256 sums
@@ -89,16 +89,54 @@ const theme = require(path.join(ROOT, 'helper', 'theme.js')).create({
   config: require(path.join(ROOT, 'helper', 'config.js')).memory({}),
   noStartup: true,
 });
-// in front of the page's own script: report script errors on <html data-errors>, and the TV's webOSSystem with no launch parameters
+// in front of the page's own script: report script errors on <html data-errors>, check multi-column tile/chip geometry on
+// <html data-layout>, and provide the TV's webOSSystem with no launch parameters
 const PROBE =
   '<script>window.onerror=function(m,s,l){var h=document.documentElement;h.setAttribute("data-errors",(h.getAttribute("data-errors")||"")+m+" (line "+l+"); ")};' +
-  'window.webOSSystem={launchParams:"{}",locale:"en-GB",hide:function(){},activate:function(){},platformBack:function(){},setInputRegion:function(){},setKeyMask:function(){}};</script>';
-const page = f => fs.readFileSync(path.join(ROOT, f), 'utf8').replace('<script>', PROBE + '<script>');
-// [name, file, what it draws, how many at least, milliseconds of page time to wait]
+  'window.webOSSystem={launchParams:"{}",locale:"en-GB",hide:function(){},activate:function(){},platformBack:function(){},setInputRegion:function(){},setKeyMask:function(){}};' +
+  'setInterval(function(){var h=document.documentElement,gt=document.querySelectorAll("#grid .tile"),ch=document.querySelectorAll("#inputs .chip");' +
+  'if(gt.length>=2){var a=gt[0].getBoundingClientRect(),b=gt[1].getBoundingClientRect();' +
+  'h.setAttribute("data-layout",Math.abs(a.top-b.top)<4&&Math.round(a.left)===96&&Math.round(b.left-a.right)>=20&&a.width>=140?"ok":"bad-grid:"+Math.round(a.left)+","+Math.round(a.top)+","+Math.round(b.left)+","+Math.round(b.top)+","+Math.round(a.width))}' +
+  'else if(ch.length>=2){var c=ch[0].getBoundingClientRect(),d=ch[1].getBoundingClientRect();' +
+  'h.setAttribute("data-layout",Math.abs(c.top-d.top)<30&&d.left>c.right&&c.width>=190?"ok":"bad-chip:"+Math.round(c.width)+","+Math.round(c.top)+","+Math.round(d.top))}},100);</script>';
+
+// Strip @supports blocks and post-Chrome-53 max() values to exercise the exact CSS fallback path webOS 4.x (Chromium 53) uses.
+function stripModernCss(css) {
+  let out = '',
+    i = 0;
+  while (i < css.length) {
+    const at = css.indexOf('@supports', i);
+    if (at < 0) {
+      out += css.slice(i);
+      break;
+    }
+    out += css.slice(i, at);
+    const open = css.indexOf('{', at);
+    if (open < 0) break;
+    let depth = 1,
+      j = open + 1;
+    while (j < css.length && depth > 0) {
+      if (css[j] === '{') depth++;
+      else if (css[j] === '}') depth--;
+      j++;
+    }
+    i = j;
+  }
+  return out.replace(/\bmax\s*\(/g, 'cytv-no-max(');
+}
+
+const page = (f, c53) => {
+  let html = fs.readFileSync(path.join(ROOT, f), 'utf8');
+  if (c53) html = html.replace(/<style>([\s\S]*?)<\/style>/g, (_, s) => '<style>' + stripModernCss(s) + '</style>');
+  return html.replace('<script>', PROBE + '<script>');
+};
+// [name, file, what it draws, how many at least, milliseconds of page time to wait, c53Fallback, checkLayout]
 const PAGES = [
-  ['launcher', 'app/index.html', /class="tile[ "]/g, 8, 8000],
-  ['manager', 'manager/app/index.html', /class="row[ "]/g, 5, 8000],
-  ['picker', 'picker/app/index.html', /class="chip[ "]/g, 2, 3000],
+  ['launcher', 'app/index.html', /class="tile[ "]/g, 8, 8000, false, true],
+  ['launcher-c53', 'app/index.html', /class="tile[ "]/g, 8, 8000, true, true],
+  ['manager', 'manager/app/index.html', /class="row[ "]/g, 5, 8000, false, false],
+  ['picker', 'picker/app/index.html', /class="chip[ "]/g, 2, 3000, false, true],
+  ['picker-c53', 'picker/app/index.html', /class="chip[ "]/g, 2, 3000, true, true],
 ];
 const marks = []; // what the pages log (perf lines: tools/perf-tv.sh reads the same on a TV)
 function serve() {
@@ -109,7 +147,7 @@ function serve() {
     if (q.method === 'OPTIONS') return r.writeHead(204), r.end();
     const json = o => (r.writeHead(200, { 'content-type': 'application/json' }), r.end(JSON.stringify(o)));
     const p = PAGES.filter(x => '/' + x[0] + '.html' === u)[0];
-    if (p) return r.writeHead(200, { 'content-type': 'text/html' }), r.end(page(p[1]));
+    if (p) return r.writeHead(200, { 'content-type': 'text/html' }), r.end(page(p[1], p[5]));
     if (u === '/qrcode.js')
       return (
         r.writeHead(200, { 'content-type': 'text/javascript' }),
@@ -145,6 +183,34 @@ function serve() {
   });
 }
 
+// Modern Linux distros (fontconfig 2.15+) use attributes such as xsi:nil in /etc/fonts/conf.d/ that Chromium 68's bundled 2018
+// libfontconfig rejects, leaving it with zero fonts and aborting in InitDefaultFont(). Point old Chromium at standard font folders directly.
+let cachedFontConf = '';
+function linuxFontConf() {
+  if (cachedFontConf) return cachedFontConf;
+  const fast = [
+    '/usr/share/fonts/liberation',
+    '/usr/share/fonts/truetype/liberation',
+    '/usr/share/fonts/dejavu',
+    '/usr/share/fonts/truetype/dejavu',
+  ].filter(d => fs.existsSync(d));
+  const fallback = ['/usr/share/fonts/TTF', '/usr/share/fonts'].filter(d => fs.existsSync(d));
+  const chosen = fast.length ? fast : fallback.length ? [fallback[0]] : ['/usr/share/fonts'];
+  const dirs = chosen.map(d => '  <dir>' + d + '</dir>').join('\n');
+  const fcCache = path.join(CACHE, 'fontconfig-cache');
+  cp.spawnSync('mkdir', ['-p', fcCache]);
+  cachedFontConf = path.join(CACHE, 'fonts.conf');
+  fs.writeFileSync(
+    cachedFontConf,
+    '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n' +
+      dirs +
+      '\n  <cachedir>' +
+      fcCache +
+      '</cachedir>\n</fontconfig>\n'
+  );
+  return cachedFontConf;
+}
+
 // asynchronous on purpose: the stand-in service runs in this process and must keep answering while the browser loads the page
 function run(bin, url, extra, budget) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cytv-chromium-'));
@@ -157,11 +223,17 @@ function run(bin, url, extra, budget) {
     '--window-size=1920,1080',
     '--virtual-time-budget=' + (budget || 8000),
   ];
+  const env = PLAT === 'linux' ? Object.assign({}, process.env, { FONTCONFIG_FILE: linuxFontConf() }) : process.env;
   return new Promise(resolve => {
-    cp.execFile(bin, argv.concat(extra, [url]), { encoding: 'utf8', timeout: 45000, maxBuffer: 32 << 20 }, (e, stdout, stderr) => {
-      cp.spawnSync('rm', ['-rf', dir]);
-      resolve({ status: e ? e.code || 1 : 0, error: e && e.killed ? 'timed out' : '', stdout: stdout || '', stderr: stderr || '' });
-    });
+    cp.execFile(
+      bin,
+      argv.concat(extra, [url]),
+      { encoding: 'utf8', env: env, timeout: 45000, maxBuffer: 32 << 20 },
+      (e, stdout, stderr) => {
+        cp.spawnSync('rm', ['-rf', dir]);
+        resolve({ status: e ? e.code || 1 : 0, error: e && e.killed ? 'timed out' : '', stdout: stdout || '', stderr: stderr || '' });
+      }
+    );
   });
 }
 
@@ -189,6 +261,7 @@ function run(bin, url, extra, budget) {
         }
         const dom = r.stdout || '';
         const errs = (/data-errors="([^"]*)"/.exec(dom) || [])[1] || '';
+        const layout = (/data-layout="([^"]*)"/.exec(dom) || [])[1] || '';
         const n = (dom.match(p[2]) || []).length;
         ok(
           r.status === 0 && dom.indexOf('<body') >= 0,
@@ -212,6 +285,7 @@ function run(bin, url, extra, budget) {
                 '\n  browser: ' +
                 (r.stderr || '').slice(-600))
         );
+        if (p[6]) ok(layout === 'ok', e[0] + ': ' + p[0] + ' lays out multi-column geometry (' + (layout || 'missing') + ')');
         const ready = marks.filter(m => /^perf launcher ready /.test(m)).pop();
         if (p[0] === 'launcher' && ready)
           console.log('     ' + e[0] + ': launcher ready ' + ready.split(' ').pop() + ' ms after the page load (this computer, not a TV)');

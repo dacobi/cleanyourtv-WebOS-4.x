@@ -29,7 +29,8 @@ html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:transpa
 var card=document.getElementById('card'),img=document.getElementById('img'),timer=0;
 /* never take the remote or the pointer: an empty input region and key mask. Newer webOS wants an array; webOS 5 throws for that and
    wants a JSON string. The array goes first, the string only when that fails, so a TV that takes the array never sees the string. */
-function setBoth(name,value){try{webOSSystem[name](value)}catch(e){try{webOSSystem[name](JSON.stringify(value))}catch(e2){}}}
+function wos(){return window.webOSSystem||window.PalmSystem||{}}
+function setBoth(name,value){var s=wos();try{s[name](value)}catch(e){try{s[name](JSON.stringify(value))}catch(e2){}}}
 setBoth('setInputRegion',[{x:0,y:0,width:0,height:0}]);
 setBoth('setKeyMask',[]);
 /* safety net: if the region was not honoured and a key reaches this window anyway, close the card at once instead of holding the remote for the whole duration */
@@ -40,7 +41,7 @@ function place(pos,wide){
   if(/bottom/.test(pos))s.bottom=m+'px';else if(/middle/.test(pos))s.top='300px';else s.top=m+'px'}
 function reveal(){requestAnimationFrame(function(){requestAnimationFrame(function(){card.classList.add('on')})})}   // only after the first full layout, so nothing jumps
 function show(){
-  var p={};try{p=JSON.parse(webOSSystem.launchParams||'{}')}catch(e){}
+  var p={};try{p=JSON.parse(wos().launchParams||'{}')}catch(e){}
   var inplace=!!p.kind&&card.classList.contains('on')&&card.className.indexOf('k-')>=0;   // a voice card that is already showing is updated without fading out
   if(!inplace)card.classList.remove('on');
   card.className=(card.classList.contains('on')?'on ':'')+(p.kind?'v k-'+p.kind:'');

@@ -45,6 +45,13 @@ run(async () => {
   fs.writeFileSync(nat, JSON.stringify({ id: 'com.webos.app.home', type: 'native', main: prog }));
   r = jtool(['exe', nat]);
   ok(r.status === 0 && r.stdout.trim() === prog, "jtool exe: the program of LG's native Home");
+  fs.writeFileSync(nat, JSON.stringify({ id: 'com.webos.app.fullhome', type: 'native', main: 'file://' + prog }));
+  ok(
+    jtool(['exe', nat]).stdout.trim() === prog &&
+      jtool(['homeid', '', '', nat]).stdout.trim() === 'com.webos.app.fullhome' &&
+      jtool(['homeid', '{"settings":{"defaultApps":{"home":"com.webos.app.home"}}}', '', nat]).stdout.trim() === 'com.webos.app.home',
+    'jtool exe and homeid: strips file://, defaults to native fullhome on webOS 4.x, and honours explicit home selection'
+  );
   fs.writeFileSync(nat, JSON.stringify({ id: 'com.webos.app.home', type: 'native', main: path.join(tmp, 'missing') }));
   ok(jtool(['exe', nat]).status === 1, 'jtool exe: a missing program is reported, so the mount way is used instead');
   const ov = path.join(tmp, 'overlay.json'),
@@ -163,5 +170,54 @@ run(async () => {
       /\$TV get homeSupported/.test(bootText) &&
       !/TESTED_SDK/.test(bootText),
     'the setup takes the window type and the compatibility list from tvprofile.js'
+  );
+
+  // webOS 4.x setup: Upstart (initctl, no systemctl), com.webos.app.fullhome native + com.webos.app.home native, firmware 05.50.00
+  const R4 = path.join(tmp, 'root4'),
+    BIN4 = path.join(tmp, 'bin4'),
+    D4 = path.join(R4, 'media/developer/cleanyourtv');
+  write(
+    path.join(R4, 'usr/palm/applications/com.webos.app.fullhome/appinfo.json'),
+    JSON.stringify({ id: 'com.webos.app.fullhome', type: 'native', main: 'file:///usr/bin/com.webos.app.fullhome' })
+  );
+  write(path.join(R4, 'usr/bin/com.webos.app.fullhome'), '', 0o755);
+  write(
+    path.join(R4, 'usr/palm/applications/com.webos.app.home/appinfo.json'),
+    JSON.stringify({ id: 'com.webos.app.home', type: 'native', main: '/usr/bin/com.webos.app.home' })
+  );
+  write(path.join(R4, 'usr/bin/com.webos.app.home'), '', 0o755);
+  write(
+    path.join(R4, 'media/developer/apps/usr/palm/applications/com.cleanyourtv.notify/appinfo.json'),
+    JSON.stringify({ id: 'com.cleanyourtv.notify', defaultWindowType: 'topui' })
+  );
+  cp.spawnSync('mkdir', ['-p', path.join(R4, 'var/lib/webosbrew/init.d'), path.join(R4, 'etc/init')]);
+  for (const j of ['sam', 'WebAppMgr', 'admanager', 'contentminer', 'nudge', 'remotelogger'])
+    write(path.join(R4, 'etc/init', j + '.conf'), '');
+  write(
+    path.join(BIN4, 'luna-send'),
+    '#!/bin/sh\necho \'{"returnValue": true, "modelName": "OLED65B9SLA", "firmwareVersion": "05.50.00", "sdkVersion": "4.10.0"}\'\n',
+    0o755
+  );
+  write(path.join(BIN4, 'initctl'), '#!/bin/sh\nexit 0\n', 0o755);
+  const b4 = cp.spawnSync('sh', [path.join(S, 'bootstrap.sh'), 'install', '--no-start'], {
+    encoding: 'utf8',
+    env: Object.assign({}, process.env, { PATH: BIN4 + ':' + process.env.PATH, CYTV_TEST_ROOT: R4, CYTV_INIT: 'upstart' }),
+    timeout: 60000,
+  });
+  const s4 = cp.spawnSync('sh', [path.join(D4, 'stage-home.sh'), 'standin'], {
+    encoding: 'utf8',
+    env: Object.assign({}, process.env, { PATH: BIN4 + ':' + process.env.PATH, CYTV_TEST_ROOT: R4, CYTV_INIT: 'upstart' }),
+    timeout: 15000,
+  });
+  const out4 = b4.stdout + b4.stderr;
+  ok(
+    b4.status === 0 &&
+      s4.status === 0 &&
+      /in the compatibility list/.test(out4) &&
+      fs.existsSync(path.join(D4, 'backup', 'fullhome-appinfo.orig.json')) &&
+      fs.readFileSync(path.join(R4, 'tmp', 'cleanyourtv-home-id'), 'utf8').trim() === 'com.webos.app.fullhome' &&
+      JSON.parse(fs.readFileSync(path.join(D4, 'home-overlay', 'appinfo.json'), 'utf8')).id === 'com.webos.app.fullhome' &&
+      JSON.parse(fs.readFileSync(path.join(D4, 'wam-launch.json'), 'utf8')).appDesc.id === 'com.webos.app.fullhome',
+    'webOS 4.x setup (Upstart, no systemctl): backs up fullhome and stages com.webos.app.fullhome for WebAppMgr stand-in'
   );
 });

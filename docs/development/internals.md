@@ -49,14 +49,16 @@ card are small and stay single files.
       `/usr/palm/applications/com.webos.app.home`, restarts the system app manager (`sam`) so it reads the new Home, and launches
       Home again. On webOS before 7 and with a native Home, `after-sam.sh` then restarts the services that keep talking to the old
       app manager (`afterSam`).
-    - `standin` (native Home, webOS 5 to 23): `jtool.js exe` finds LG's Home program in the stock `appinfo.json` and the script
-      bind-mounts `home-standin.sh` over it, then stops LG's running Home once. `sam` is not restarted and keeps LG's Home manifest,
-      so it starts the stand-in for Home. The stand-in sends `wam-launch.json` (written by `stage-home.sh` with `jtool.js wamlaunch`) to
-      `com.palm.webappmanager/launchApp`, which opens the directory from step 2 as `com.webos.app.home`, and holds a registration
-      with `sam` so the Home key sends it `relaunch`. Without registration, `sam` restarts the stand-in on the Home key, which opens
-      the launcher the same way. `/tmp/cleanyourtv-home-standin` holds the program's path while it is mounted; `reload-home.sh`,
-      `undo-home.sh`, the debloat hook and the manager's status read it. If `webapp-mgr` does not list the launcher within 30
-      seconds, `undo-home.sh temp` brings LG's Home back. `home-method` holding `mount` forces the first way.
+    - `standin` (native Home, webOS 4 to 23): `jtool.js exe` finds LG's Home program in the stock `appinfo.json` (plus
+      `com.webos.app.fullhome` on webOS 4.x, where `jtool.js homeid` picks the active Home ID) and the script bind-mounts
+      `home-standin.sh` over them, then stops LG's running Home once. `sam` is not restarted and keeps LG's Home manifest, so it starts
+      the stand-in for Home. The stand-in sends `wam-launch.json` (written by `stage-home.sh` with `jtool.js wamlaunch`) to
+      `com.palm.webappmanager/launchApp`, which opens the directory from step 2 as the active Home ID (`com.webos.app.fullhome` on
+      webOS 4.x, `com.webos.app.home` elsewhere), and holds a registration with `sam` so the Home key sends it `relaunch`. Without
+      registration, `sam` restarts the stand-in on the Home key, which opens the launcher the same way. `/tmp/cleanyourtv-home-standin`
+      holds the mounted program path(s) and `/tmp/cleanyourtv-home-id` holds the active Home ID; `reload-home.sh`, `undo-home.sh`, the
+      debloat hook and the manager's status read them. If `webapp-mgr` does not list the launcher within 30 seconds, `undo-home.sh temp`
+      brings LG's Home back. `home-method` holding `mount` forces the first way.
 4. A **watchdog** keeps checking that the service answers. If it stays unreachable for about a minute, it restores LG's Home until
    the next reboot.
 
@@ -74,17 +76,26 @@ Nothing is written under `/usr`: the mount disappears at reboot. `DISABLE` in `/
 
 ## Older webOS versions
 
-webOS 5 and 6 ship Node.js 8, and webOS 6 has Chromium 79.
+webOS 4.x ships Upstart (`initctl`), Node.js 0.12.2 and Chromium 53; webOS 5 and 6 ship systemd, Node.js 8.12 and Chromium 68 / 79.
 
-- `helper/netcompat.js` supplies `URL`, `URLSearchParams`, `crypto.randomInt`, `mkdir -p` and the `http(s).get(url, options)` form.
+- `scripts/svc.sh` wraps service checks, restarts and stops across `systemctl` (webOS 5+) and Upstart `initctl` (webOS 4.x, mapping
+  `webapp-mgr` to `WebAppMgr` and `preload-manager` to `webos-preload-manager`).
+- The service (`helper/*.js`) and `scripts/jtool.js` are written in ES5 + `Promise` so they run directly on Node.js 0.12.2 as well as
+  Node.js 8 and 16. `helper/netcompat.js` supplies `URL`, `URLSearchParams`, `bufFrom`, `bufAlloc`, `timingSafeEqual`, `copyFileSync`,
+  `crypto.randomInt`, `mkdir -p`, the `http(s).get(url, options)` form, and loads `/etc/ssl/certs/ca-certificates.crt` on Node 0.12 so
+  HTTPS to GitHub and Let's Encrypt works despite Node 0.12's older built-in CA bundle.
 - What differs between versions is decided in `helper/tvprofile.js`: the picker is started on demand and the notification window is an
-  `overlay` before webOS 25 (SDK 10); LG's native Home (webOS 5 to 23) is taken over by the stand-in, without restarting the app
-  manager. The table is in [Tested TVs](../tested-tvs.md#what-differs-between-webos-versions).
+  `overlay` before webOS 25 (SDK 10); LG's native Home (webOS 4 to 23, including `com.webos.app.fullhome` on webOS 4.x) is taken over by
+  the stand-in, without restarting the app manager. The table is in [Tested TVs](../tested-tvs.md#what-differs-between-webos-versions).
 - The pages do not use flex `gap`, which Chromium before 84 ignores: spacing between flex children is a sibling margin
-  (`.row > * + * { margin-left: 22px; }`). Grid `gap` is fine from Chromium 66. The focus ring of a tile is a `::before` with its own
+  (`.row > * + * { margin-left: 22px; }`). On Chromium 53 (before CSS Grid in Chromium 57), `#grid` falls back to Flexbox wrap with
+  half-gap margins, enhanced with `@supports (display: grid)` on Chromium 68+; `clock.js` passes `hour12` alongside `hourCycle`, and
+  `.chip` in the Inputs picker keeps `min-width: 200px` before `max()`. The focus ring of a tile is a `::before` with its own
   radius, because Chromium before 94 draws an `outline` as a rectangle.
-- The service accepts the `file://<appId>-webos` origin that webOS 6 apps send, for our own apps and the Home slot only.
-- `scripts/reload-home.sh` restarts `webapp-mgr` on webOS 6, where a relaunch alone keeps the old page.
+- The service accepts the `file://<appId>` and bare `file://` origins sent by Chromium 53 (webOS 4) and the `file://<appId>-webos`
+  origin sent by webOS 6 apps (including `com.webos.app.fullhome`), for our own apps and the Home slot only; the pages read
+  `window.webOSSystem || window.PalmSystem` because webOS 4 exposes `PalmSystem` without the `webOSSystem` alias.
+- `scripts/reload-home.sh` restarts `webapp-mgr` (`WebAppMgr` on webOS 4) on webOS 6 and older, where a relaunch alone keeps the old page.
 
 !!! note "Checked by reports, not by the maintainer"
     The maintainer's TV runs webOS 25. webOS 5, 6 and 23 are known from reports ([Tested TVs](../tested-tvs.md)). Every change is

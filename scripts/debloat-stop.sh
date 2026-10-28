@@ -8,6 +8,7 @@
 # sh debloat-stop.sh [group...]: only those groups; without arguments every group that is not switched off.
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin:$PATH
 L=/media/developer/cleanyourtv
+[ -f "$L/svc.sh" ] && . "$L/svc.sh" || { [ -f "$(dirname "$0")/svc.sh" ] && . "$(dirname "$0")/svc.sh"; }
 if [ $# -gt 0 ]; then
   G=" $* "
 else
@@ -21,11 +22,12 @@ on logs && units="$units remotelogger service-logger"
 on suggestions && { units="$units contentminer nudge"; bins="$bins sportsalarm"; }
 on tracking && bins="$bins acr2"
 on ads && bins="$bins admanager adoverlay-service"
-# --no-block: contentminer can take a minute to stop, which held up the rest of the script (and the manager waiting for it)
-for s in $units; do systemctl --no-block stop $s.service 2>&1 | sed "s/^/$s: /"; done
-# luna dynamic services: bind a do-nothing stub over the binary so ls-hubd cannot start them
+# non-blocking: contentminer can take a minute to stop, which held up the rest of the script (and the manager waiting for it)
+for s in $units; do svc_stop_bg "$s" | sed "s/^/$s: /"; done
+# luna dynamic services (and Upstart jobs like admanager on webOS 4.x): bind a do-nothing stub over the binary so ls-hubd cannot start them
 printf '#!/bin/sh\nexit 0\n' > $L/stub-noop; chmod +x $L/stub-noop
 for b in $bins; do
+  svc_stop_bg "$b" >/dev/null 2>&1
   [ -e /usr/sbin/$b ] || continue
   grep -q " /usr/sbin/$b " /proc/mounts || mount --bind $L/stub-noop /usr/sbin/$b
   pkill -9 -f "^/usr/sbin/$b"

@@ -37,7 +37,14 @@ run(async () => {
     },
   };
   const a = make('nl-NL', T);
+  const w4 = new Function('window', 'navigator', 'document', 'I18N', runtime + '; return { lang: function () { return LANG; } };')(
+    { PalmSystem: { locale: 'nl-NL' } },
+    { language: 'en' },
+    { documentElement: {} },
+    T
+  );
   ok(a.lang() === 'nl' && a.t('Hidden apps') === 'Verborgen apps', 'the TV language is used, and a whole text is found');
+  ok(w4.lang() === 'nl', 'on webOS 4 (PalmSystem without webOSSystem) the TV language is read from PalmSystem.locale');
   ok(
     a.t('3 photos · synced 5 min ago') === '3 foto’s · gesynchroniseerd 5 min geleden',
     'the parts of a joined text and templates within templates'

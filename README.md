@@ -7,6 +7,12 @@
 
 <p align="center"><img src="assets/icon.svg" width="128" alt="CleanYourTV icon"></p>
 
+# DISCLAIMER!
+
+THIS IS A COMPLETLEY VIBE CODED BACKPORT FORK OF CleanYourTV-WebOS for WebOS 4.x
+I HAVE NO IDEA HOW IT WORKS AND IT MAY BRICK YOUR TV
+It does however work on my LG65B9SLA although still somewhat buggy and sluggish.
+
 # CleanYourTV for LG webOS
 
 A fast home screen for rooted LG webOS TVs, with Live TV from your own playlist, an Inputs list on the Input key,
@@ -26,8 +32,8 @@ sets up, updates and removes everything.
 
 ### Compatibility at a glance
 
-* **webOS**: 5 and newer (2020 models and later). webOS 4 and older have no systemd and an old Node.js; the setup stops before it
-  changes anything. LG names its versions two ways: [webOS version numbers](https://lasharor.github.io/cleanyourtv-WebOS/tested-tvs/#webos-version-numbers) gives both.
+* **webOS**: 4 and newer (Upstart on webOS 4.x, systemd on webOS 5+). webOS 3 and older ship a Node.js without `Promise`; the setup
+  stops before it changes anything. LG names its versions two ways: [webOS version numbers](https://lasharor.github.io/cleanyourtv-WebOS/tested-tvs/#webos-version-numbers) gives both.
 * **Access**: a TV rooted with the [Homebrew Channel](https://webosbrew.org) ([rootmy.tv](https://rootmy.tv)) and internet access
   on the TV for the download. Install from the Homebrew Channel, or with one command over SSH as `root`.
 * **Tested hardware**: LG OLED65G26LA on webOS 25. Other TVs are reported in
@@ -165,7 +171,7 @@ Troubleshooting and fixing with an AI assistant (Claude, ChatGPT, a local model)
 Translations are welcome too: a language is one file in [`i18n/`](i18n/), no programming needed
 ([how](https://lasharor.github.io/cleanyourtv-WebOS/languages/)). Reports from other TVs are the most useful contribution: open an [issue](https://github.com/lasharor/cleanyourtv-WebOS/issues)
 with the output of **Share log** in the manager app. For code, see [Contributing](https://lasharor.github.io/cleanyourtv-WebOS/development/):
-the service runs on Node.js 8 (webOS 5), `sh tools/check.sh` runs every check, every push to `dev` publishes a dev build, and a release goes out daily from `dev`.
+the service runs on Node.js 0.12 (webOS 4) and Node.js 8 (webOS 5 and 6), `sh tools/check.sh` runs every check, every push to `dev` publishes a dev build, and a release goes out daily from `dev`.
 
 ---
 

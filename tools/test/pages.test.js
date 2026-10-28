@@ -14,8 +14,8 @@ run(async () => {
       'a function newer than Chromium 68',
     ],
     [
-      /\baspect-ratio\s*:|:is\(|:where\(|:has\(|\binset\s*:|:focus-visible|\bcontainer-type|color-mix\(|\b\d+d?v?[sd]vh\b|@layer\b/,
-      'CSS newer than Chromium 68',
+      /\baspect-ratio\s*:|:is\(|:where\(|:has\(|\binset\s*:|:focus-visible|\bcontainer-type|color-mix\(|\b\d+d?v?[sd]vh\b|@layer\b|\bplace-(items|content|self)\s*:|\b(overscroll|scroll)-behavior\s*:/,
+      'CSS newer than Chromium 53 / 68',
     ],
   ];
   const bad = [];
@@ -93,5 +93,75 @@ run(async () => {
   ok(
     !/(^|\n)\s*\.st\s*\{/.test(launcher) && /svg\.st\s*\{\s*width:\s*26px/.test(launcher),
     "the favourite star is styled as svg.st, so the menu's .st text keeps its natural width"
+  );
+  // Chromium 53 (webOS 4.x) lacks CSS Grid, max() and Intl hourCycle: check that the fallbacks stay in place
+  ok(
+    /#grid\s*\{[^}]*display:\s*flex/.test(launcher) && /@supports\s*\(display:\s*grid\)/.test(launcher),
+    'the launcher grid has a Flexbox fallback for Chromium 53 (webOS 4) before @supports (display: grid)'
+  );
+  ok(
+    /o\.hour12\s*=\s*false/.test(launcher) && /o\.hour12\s*=\s*true/.test(launcher),
+    'the clock passes hour12 alongside hourCycle for Chromium 53 (webOS 4)'
+  );
+  ok(
+    /min-width:\s*200px;\s*min-width:\s*max\(200px,\s*fit-content\)/.test(pickerPage),
+    'the Inputs picker keeps a min-width: 200px fallback before max() for Chromium 53 (webOS 4)'
+  );
+  // Outside @supports (...), no style block may rely on CSS Grid, gap, 8-digit hex alpha, calc() inside rgba(), or <time> inside calc()
+  function stripSupports(css) {
+    let out = '',
+      i = 0;
+    while (i < css.length) {
+      const at = css.indexOf('@supports', i);
+      if (at < 0) {
+        out += css.slice(i);
+        break;
+      }
+      out += css.slice(i, at);
+      const open = css.indexOf('{', at);
+      if (open < 0) break;
+      let depth = 1,
+        j = open + 1;
+      while (j < css.length && depth > 0) {
+        if (css[j] === '{') depth++;
+        else if (css[j] === '}') depth--;
+        j++;
+      }
+      i = j;
+    }
+    return out;
+  }
+  const c53Bad = [];
+  for (const f of pages) {
+    const html = fs.readFileSync(f, 'utf8'),
+      rel = path.relative(root, f),
+      re = /<style>([\s\S]*?)<\/style>/g;
+    let m;
+    while ((m = re.exec(html))) {
+      if (/#[0-9a-fA-F]{8}\b/.test(m[1])) c53Bad.push(rel + ': 8-digit hex colour (#rrggbbaa needs Chrome 62+)');
+      if (/\b(min|clamp)\s*\(/.test(m[1])) c53Bad.push(rel + ': CSS min()/clamp() (needs Chrome 79+)');
+      const base = stripSupports(m[1]).replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/display:\s*(inline-)?grid\b/.test(base)) c53Bad.push(rel + ': display: grid outside @supports');
+      if (/(^|[{;\s])(grid-|row-|column-)?gap\s*:/.test(base)) c53Bad.push(rel + ': gap outside @supports');
+      if (/rgba?\([^)]*calc\(/.test(base)) c53Bad.push(rel + ': calc() inside rgb()/rgba() outside @supports');
+      if (/transition(-duration)?\s*:[^;}]*calc\(/.test(base)) c53Bad.push(rel + ': calc() in transition duration outside @supports');
+    }
+  }
+  ok(
+    !c53Bad.length,
+    'all <style> blocks keep a valid Chromium 53 base outside @supports' + (c53Bad.length ? ':\n  ' + c53Bad.join('\n  ') : '')
+  );
+  // webOS 4 exposes window.PalmSystem without window.webOSSystem: every page must fall back to PalmSystem and never call bare webOSSystem.*
+  const wosBad = [];
+  for (const f of pages) {
+    const html = fs.readFileSync(f, 'utf8'),
+      rel = path.relative(root, f),
+      scripts = (html.match(/<script>[\s\S]*?<\/script>/g) || []).join('\n');
+    if (/\bwebOSSystem\s*[.[]/.test(scripts)) wosBad.push(rel + ': bare webOSSystem property access without PalmSystem fallback');
+    if (!/window\.PalmSystem\b/.test(scripts)) wosBad.push(rel + ': missing window.PalmSystem fallback');
+  }
+  ok(
+    !wosBad.length,
+    'every page falls back from window.webOSSystem to window.PalmSystem (webOS 4)' + (wosBad.length ? ': ' + wosBad.join('; ') : '')
   );
 });

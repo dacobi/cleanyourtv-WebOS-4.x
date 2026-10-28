@@ -28,16 +28,18 @@ uninstall. Optional features contact other services only when you switch them on
     - **LG's Home is a flutter or web app** (webOS 24 and newer): a directory holding the launcher is **bind-mounted** over LG's Home
       app (`/usr/palm/applications/com.webos.app.home`). Its `appinfo.json` is derived from this TV's own stock Home, so nothing of
       LG's is shipped. The system app manager (`sam`) is restarted so that it reads the new Home.
-    - **LG's Home is a native program** (webOS 5 to 23): `home-standin.sh` is **bind-mounted** over that program (its path comes from
-      the stock Home's `appinfo.json`, usually `/usr/bin/com.webos.app.home`) and LG's running Home is stopped once. LG's Home
-      manifest stays in place and the app manager is not restarted: it starts the stand-in whenever Home is launched. The stand-in
-      asks `webapp-mgr` to open the launcher directory as `com.webos.app.home` and tries to register with the app manager as Home,
-      so the Home key shows the open launcher again. If the launcher is not open in `webapp-mgr` within 30 seconds, the stand-in is
-      removed and LG's Home comes back until the next reboot. A file `/media/developer/cleanyourtv/home-method` holding `mount`
-      makes such a TV use the first way.
+    - **LG's Home is a native program** (webOS 4 to 23): `home-standin.sh` is **bind-mounted** over that program (its path comes from
+      the stock Home's `appinfo.json`, usually `/usr/bin/com.webos.app.home`, plus `/usr/bin/com.webos.app.fullhome` on webOS 4.x where
+      `com.webos.app.fullhome` is the active Home) and LG's running Home is stopped once. LG's Home manifest stays in place and the app
+      manager is not restarted: it starts the stand-in whenever Home is launched. The stand-in asks `webapp-mgr` (`WebAppMgr` on
+      webOS 4.x) to open the launcher directory as the active Home app ID (`com.webos.app.fullhome` or `com.webos.app.home`) and tries to
+      register with the app manager as Home, so the Home key shows the open launcher again. If the launcher is not open in `webapp-mgr`
+      within 30 seconds, the stand-in is removed and LG's Home comes back until the next reboot. A file
+      `/media/developer/cleanyourtv/home-method` holding `mount` makes such a TV use the first way.
 
    Whenever the app manager is restarted on a TV with LG's native Home or on webOS before 7 (the first way, or the setup registering
-   our extra apps), the services that talk to it (`eim`, `webapp-mgr`, `preload-manager`, `memorymanager`, those the TV has) are
+   our extra apps), the services that talk to it (`eim`, `webapp-mgr` / `WebAppMgr`, `preload-manager` / `webos-preload-manager`,
+   `memorymanager`, those the TV has via `scripts/svc.sh` over `systemctl` or Upstart `initctl`) are
    restarted after it (`after-sam.sh`). Without that, apps stopped opening, an HDMI input lost its picture and HDMI-CEC control
    stopped (issues 14, 23 and 24). Each step is written to `/tmp/cleanyourtv-boot.log`, which **Share log** includes.
    On webOS 26 (SDK 11) with the flutter or web Home, the same hook restarts `arccontroller` after the app manager, if it runs: on

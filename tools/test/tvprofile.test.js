@@ -34,6 +34,18 @@ run(async () => {
       { pickerMode: 'ondemand', notifyWindow: 'overlay', tested: true, testedNote: 'a prefix' },
     ],
     [
+      'webOS 4.10 (fullhome native + Node 0.12)',
+      { sdk: '4.10.0', firmware: '05.50.00', home: 'com.webos.app.fullhome native', node: 'v0.12.2' },
+      {
+        pickerMode: 'ondemand',
+        notifyWindow: 'overlay',
+        homeTakeover: 'standin',
+        homeSupported: false,
+        legacyNode: true,
+        sdkMajor: 4,
+      },
+    ],
+    [
       'SDK unknown',
       { sdk: '', firmware: '', home: '' },
       { pickerMode: 'ondemand', notifyWindow: 'overlay', homeSupported: false, tested: false, sdkMajor: 0 },
@@ -53,10 +65,11 @@ run(async () => {
   );
   ok(
     tv.decide({ home: 'com.webos.app.home native' }).homeTakeover === 'standin' &&
+      tv.decide({ home: 'com.webos.app.fullhome native' }).homeTakeover === 'standin' &&
       tv.decide({ home: 'com.webos.app.home flutter' }).homeTakeover === 'mount' &&
       tv.decide({ home: 'com.webos.app.home web' }).homeTakeover === 'mount' &&
       tv.decide({}).homeTakeover === 'mount',
-    "LG's native Home is taken over by a stand-in for its program (no app manager restart); flutter, web and unknown by the mount"
+    "LG's native Home (home or fullhome) is taken over by a stand-in for its program (no app manager restart); flutter, web and unknown by the mount"
   );
   // Issue 21: ARC remained silent after SAM restarted, although the controller was active.
   const arc = { model: 'OLED65C35LA.AEU', sdk: '11.2.0', home: 'com.webos.app.home flutter' };
@@ -73,6 +86,7 @@ run(async () => {
   );
   ok(
     cli(['get', 'tested', '--firmware', '33.23.05', '--compat', path.join(root, 'compat.json')]) === '1' &&
+      cli(['get', 'tested', '--firmware', '05.50.00', '--compat', path.join(root, 'compat.json')]) === '1' &&
       cli(['get', 'tested', '--firmware', '99.99.99', '--compat', path.join(root, 'compat.json')]) === '0',
     "from the shell: is the firmware in the repository's compat.json"
   );

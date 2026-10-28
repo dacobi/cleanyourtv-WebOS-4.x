@@ -10,6 +10,7 @@
     { "firmware": "03.53.45", "sdk": "6.5.3", "homeType": "native", "status": "reported", "note": "OLED55G19LA, 65NANO753PR, OLED65B16LA, 55UP7550PVG and OLED48C16LA, webOS 6.5.3 (issues 5, 8, 12, 18 and 26)" },
     { "firmware": "04.41.35", "sdk": "5.4.3", "homeType": "native", "status": "reported", "note": "OLED55CX3LA, webOS 5.4.3 (issue 13)" },
     { "firmware": "23.23.30", "sdk": "9.2.4", "homeType": "", "status": "reported", "note": "OLED55G4, webOS 24 (pull request 25)" },
-    { "firmware": "04.60.91", "homeType": "", "status": "reported", "note": "43NANO786QA, webOS 22 (7.6) (issue 31)" }
+    { "firmware": "04.60.91", "homeType": "", "status": "reported", "note": "43NANO786QA, webOS 22 (7.6) (issue 31)" },
+    { "firmware": "05.50.*", "sdk": "4.10.0", "homeType": "native", "status": "tested", "note": "OLED65B9SLA, webOS 4.10" }
   ]
 }

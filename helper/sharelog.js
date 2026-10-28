@@ -3,49 +3,58 @@
 // token, so it can be opened on a phone (the manager app shows the address as a QR code). It does not need the service to
 // be running, so it also works when the setup failed. Addresses, MAC addresses and URL paths are masked in the report.
 // Writes /tmp/cytv-sharelog.json {url, until}. Usage: node sharelog.js
-const http = require('http'),
+var http = require('http'),
   fs = require('fs'),
   crypto = require('crypto');
-const P = require('./paths'),
+var P = require('./paths'),
   exec = require('./exec'),
   web = require('./web'),
   i18n = require('./i18n');
-const D = P.D,
+var D = P.D,
   SVC = P.SERVICE_DIR,
   SETUPLOG = P.SETUP_LOG;
-const STATE = '/tmp/cytv-sharelog.json',
+var STATE = '/tmp/cytv-sharelog.json',
   PIDF = '/tmp/cytv-sharelog.pid',
   LIFE = 10 * 60 * 1000;
 
-const sh = (cmd, ms) => exec.shSync(cmd, ms);
-const read = (f, tail) => {
+function sh(cmd, ms) {
+  return exec.shSync(cmd, ms);
+}
+function read(f, tail) {
   try {
-    const t = fs.readFileSync(f, 'utf8');
+    var t = fs.readFileSync(f, 'utf8');
     return tail ? t.split('\n').slice(-tail).join('\n') : t;
   } catch (_) {
     return '(not present)';
   }
-};
+}
 
 // ---- masking ----
 function redact(t) {
   return t
-    .replace(/https?:\/\/[^\s"'<>)]+/g, u => {
-      const m = /^(https?:\/\/)([^\/:?#]+)/.exec(u);
+    .replace(/https?:\/\/[^\s"'<>)]+/g, function (u) {
+      var m = /^(https?:\/\/)([^\/:?#]+)/.exec(u);
       if (!m) return '<url>';
       return m[1] + (m[2] === '127.0.0.1' ? m[2] : /^\d+\.\d+\.\d+\.\d+$/.test(m[2]) ? 'x.x.x.x' : m[2]) + '/…';
     })
-    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, ip => (ip === '127.0.0.1' || ip === '0.0.0.0' ? ip : 'x.x.x.x'))
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, function (ip) {
+      return ip === '127.0.0.1' || ip === '0.0.0.0' ? ip : 'x.x.x.x';
+    })
     .replace(/\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b/g, 'xx:xx:xx:xx:xx:xx')
     .replace(/("(?:token|key|password|pass|secret|apikey)"\s*:\s*")[^"]*"/gi, '$1…"');
 }
 
 function report() {
-  const o = [];
-  const sec = (title, body) => o.push('\n===== ' + title + ' =====\n' + String(body).trim());
+  /** @type {string[]} */
+  var o = [];
+  function sec(title, body) {
+    o.push('\n===== ' + title + ' =====\n' + String(body).trim());
+  }
   sec('CleanYourTV report', new Date().toISOString());
-  const ver = f => (/const VERSION = '([^']+)'/.exec(read(f)) || [])[1] || '?';
-  const info = sh(
+  function ver(f) {
+    return (/(?:const|var) VERSION = '([^']+)'/.exec(read(f)) || [])[1] || '?';
+  }
+  var info = sh(
     'luna-send -n 1 -w 5000 -f luna://com.webos.service.tv.systemproperty/getSystemInfo \'{"keys":["modelName","firmwareVersion","sdkVersion"]}\' </dev/null'
   );
   sec(
@@ -62,10 +71,14 @@ function report() {
       read(D + '/app/version.json').replace(/\s+/g, ' ')
   );
   sec('TV profile (tvprofile.js)', read(P.TV).replace(/\s+/g, ' '));
-  let home = read(D + '/backup/home-appinfo.orig.json');
-  if (home === '(not present)') home = read(P.HOME_APP + '/appinfo.json');
+  var activeId = read(P.HOME_ID_FILE).trim();
+  var home =
+    activeId === 'com.webos.app.fullhome' ? read(D + '/backup/fullhome-appinfo.orig.json') : read(D + '/backup/home-appinfo.orig.json');
+  if (home === '(not present)') {
+    home = read((activeId === 'com.webos.app.fullhome' ? P.FULLHOME_APP : P.HOME_APP) + '/appinfo.json');
+  }
   try {
-    const h = JSON.parse(home);
+    var h = JSON.parse(home);
     sec(
       "LG's Home app (stock appinfo)",
       JSON.stringify(
@@ -79,10 +92,13 @@ function report() {
   }
   sec(
     'Mounts and boot scripts',
-    sh("grep -E 'com.webos.app.home|InputPicker' /proc/mounts | cut -c1-120 | head -5") + '\n' + sh('ls ' + P.INITD + ' 2>&1')
+    sh("grep -E 'com.webos.app.(full)?home|InputPicker' /proc/mounts | cut -c1-120 | head -5") + '\n' + sh('ls ' + P.INITD + ' 2>&1')
   );
-  let apps = '';
-  for (const id of ['com.cleanyourtv.manager', 'com.cleanyourtv.picker', 'com.cleanyourtv.notify', 'com.webos.app.home'])
+  var checkIds = ['com.cleanyourtv.manager', 'com.cleanyourtv.picker', 'com.cleanyourtv.notify', 'com.webos.app.home'];
+  if (fs.existsSync(P.FULLHOME_APP)) checkIds.push('com.webos.app.fullhome');
+  var apps = '';
+  for (var i = 0; i < checkIds.length; i++) {
+    var id = checkIds[i];
     apps +=
       id +
       ': ' +
@@ -92,19 +108,21 @@ function report() {
         ? 'registered'
         : 'not registered') +
       '\n';
+  }
   sec('Apps', apps);
-  let opts = '(no config)';
+  var opts = '(no config)';
   try {
     opts = JSON.stringify(JSON.parse(read(D + '/config.json')).options || {});
   } catch (_) {}
   sec('Options', opts + '\nDISABLE file: ' + (fs.existsSync(D + '/DISABLE') ? 'yes (LG Home selected)' : 'no'));
-  let keys = '{}';
+  var keys = '{}';
   try {
     keys = JSON.stringify(JSON.parse(read(D + '/config.json')).keys || {});
   } catch (_) {}
-  const hl = read(P.HOOK_LOG);
-  const codes = {};
-  (hl.match(/uinput_code=\d+/g) || []).forEach(c => {
+  var hl = read(P.HOOK_LOG);
+  /** @type {Record<string, number>} */
+  var codes = {};
+  (hl.match(/uinput_code=\d+/g) || []).forEach(function (c) {
     codes[c] = (codes[c] || 0) + 1;
   });
   sec(
@@ -118,7 +136,9 @@ function report() {
       '\n' +
       hl
         .split('\n')
-        .filter(l => /\[(ERRO|FAIL|WARN)|Resolving|Applying|initialized/.test(l))
+        .filter(function (l) {
+          return /\[(ERRO|FAIL|WARN)|Resolving|Applying|initialized/.test(l);
+        })
         .slice(0, 8)
         .join('\n')
   );
@@ -126,9 +146,11 @@ function report() {
   sec('Setup log (' + SETUPLOG + ')', read(SETUPLOG, 150));
   sec('Service log saved at the last rollback', read(SETUPLOG + '.service', 80));
   sec('Last update error', read(D + '/last-error.txt'));
-  const changes = read(P.SERVICE_LOG)
+  var changes = read(P.SERVICE_LOG)
     .split('\n')
-    .filter(l => /^config: /.test(l));
+    .filter(function (l) {
+      return /^config: /.test(l);
+    });
   sec('Settings changes (config: ...)', changes.length ? changes.slice(-20).join('\n') : '(none since the service started)');
   sec('Boot steps (/tmp/cleanyourtv-boot.log)', read('/tmp/cleanyourtv-boot.log', 40));
   sec('Service log (last 80 lines)', read(P.SERVICE_LOG, 80));
@@ -137,10 +159,14 @@ function report() {
 }
 
 // ---- server ----
-const lanIp = () => web.lanIp() || '127.0.0.1';
+function lanIp() {
+  return web.lanIp() || '127.0.0.1';
+}
 // the page around the report is in the phone's language (i18n.js); the report itself stays English, for the people who read the bug report
-const page = (text, lang) => {
-  const T = x => web.esc(i18n.tr(lang, x));
+function page(text, lang) {
+  function T(x) {
+    return web.esc(i18n.tr(lang, x));
+  }
   return (
     '<!doctype html><html lang="' +
     lang +
@@ -172,17 +198,17 @@ const page = (text, lang) => {
     JSON.stringify(i18n.tr(lang, 'Press and hold the text, then choose Copy')) +
     '};</script></body></html>'
   );
-};
+}
 
 function main() {
   try {
-    const old = parseInt(fs.readFileSync(PIDF, 'utf8'), 10);
+    var old = parseInt(fs.readFileSync(PIDF, 'utf8'), 10);
     if (old) process.kill(old, 'SIGTERM');
   } catch (_) {}
-  const token = crypto.randomBytes(9).toString('hex');
-  let text = 'The report is still being prepared; reload in a few seconds.';
-  const srv = http.createServer((req, res) => {
-    const u = req.url.split('?')[0];
+  var token = crypto.randomBytes(9).toString('hex');
+  var text = 'The report is still being prepared; reload in a few seconds.';
+  var srv = http.createServer(function (req, res) {
+    var u = String(req.url || '').split('?')[0];
     if (u === '/' + token) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       return res.end(page(text, i18n.lang(req, '')));
@@ -194,8 +220,8 @@ function main() {
     res.writeHead(404);
     res.end();
   });
-  let port = 8768;
-  srv.on('error', (/** @type {any} */ e) => {
+  var port = 8768;
+  srv.on('error', function (/** @type {any} */ e) {
     if (e.code === 'EADDRINUSE' && port < 8790) {
       port++;
       srv.listen(port, '0.0.0.0');
@@ -204,18 +230,18 @@ function main() {
       process.exit(1);
     }
   });
-  srv.on('listening', () => {
-    const until = Date.now() + LIFE;
-    fs.writeFileSync(STATE, JSON.stringify({ url: 'http://' + lanIp() + ':' + port + '/' + token, until }));
+  srv.on('listening', function () {
+    var until = Date.now() + LIFE;
+    fs.writeFileSync(STATE, JSON.stringify({ url: 'http://' + lanIp() + ':' + port + '/' + token, until: until }));
     fs.writeFileSync(PIDF, String(process.pid));
-    setTimeout(() => {
+    setTimeout(function () {
       try {
         fs.unlinkSync(STATE);
       } catch (_) {}
       process.exit(0);
     }, LIFE);
     // collected after the address is published: right after a boot the luna calls can take a long time
-    setTimeout(() => {
+    setTimeout(function () {
       text = report();
     }, 50);
   });
@@ -225,4 +251,4 @@ if (require.main === module) {
   if (process.argv[2] === '--print') process.stdout.write(report());
   else main();
 }
-module.exports = { report, redact };
+module.exports = { report: report, redact: redact };

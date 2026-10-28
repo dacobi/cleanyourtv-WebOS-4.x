@@ -9,9 +9,9 @@
 
 # DISCLAIMER!
 
-THIS IS A COMPLETLEY VIBE CODED BACKPORT FORK OF CleanYourTV-WebOS for WebOS 4.x
-I HAVE NO IDEA HOW IT WORKS AND IT MAY BRICK YOUR TV
-It does however work on my LG65B9SLA although still somewhat buggy and sluggish.
+THIS IS A COMPLETLEY VIBE CODED BACKPORT FORK OF CleanYourTV-WebOS for WebOS 4.x  
+I HAVE NO IDEA HOW IT WORKS AND IT MAY BRICK YOUR TV  
+It does however work on my LG65B9SLA although still somewhat buggy and sluggish.  
 
 # CleanYourTV for LG webOS
 
